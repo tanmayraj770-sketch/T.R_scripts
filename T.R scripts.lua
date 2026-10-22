@@ -29,7 +29,8 @@ local U = utf8.char local E = { Bolt    = U(0x26A1), Save    = U(0x1F4BE), Check
 	Clip    = U(0x1F4CB), Plus    = U(0x2795), Trash   = U(0x1F5D1), Star    = U(0x2B50),
 	Search  = U(0x1F50D), Refresh = U(0x1F504), Magnet  = U(0x1F9F2), Box     = U(0x1F4E6),
 	Play    = U(0x25B6), Broom   = U(0x1F9F9), Stop    = U(0x23F9), Tick    = U(0x2713),
-	Grip    = U(0x25E2), Target  = U(0x1F3AF) }
+	Grip    = U(0x25E2), Target  = U(0x1F3AF), Crown   = U(0x1F451),
+	Sparkle = U(0x2728), Fire    = U(0x1F525) }
 --==============================================================================
 -- 1. ENVIRONMENT & DEEP CLEANUP ENGINE
 --==============================================================================
@@ -79,7 +80,7 @@ local CONFIG_FILENAME = "TRScripts_Config_V100.json" local FALLBACK_FILES = {
 	"TRScripts_Config_V96.json", "TRScripts_Config_V95.json", "TRScripts_Config_V94.json",
 	"TRScripts_Config_V93.json", "TRScripts_Config_V92.json" } local DefaultConfig = { Settings = {
 		Theme = "Default", GuiDesign = "Default", Animation = "Default", WindowWidth = 760, WindowHeight = 480, WalkSpeed = 18, JumpPower = 50, FOV = 70,
-		FlySpeed = 100, FlyKeybind = "E", FreecamSpeed = 60, FreecamKeybind = "C", MouseLockKeybind = "M", AimbotKeybind = "Q", AimbotKeyMode = "Toggle", AimbotBurstDurationMs = 1000, TargetAimbotKeybind = "T", AutoShootKeybind = "Z", AimbotAutoShootKeybind = "V", AimbotAutoShootEnabled = false, AutoShootDelayMs = 25, ESPHealthBars = true, AimbotFOVRadius = 200,
+		FlySpeed = 100, FlyKeybind = "E", FreecamSpeed = 60, FreecamKeybind = "C", MouseLockKeybind = "M", AimbotKeybind = "Q", AimbotKeyMode = "Toggle", AimbotBurstDurationMs = 1000, TargetAimbotKeybind = "T", AutoShootKeybind = "Z", AutoShootMode = "Aimbot", AimbotAutoShootKeybind = "None", AimbotAutoShootEnabled = false, AutoShootDelayMs = 25, ESPHealthBars = true, AimbotFOVRadius = 200,
 		AimbotFOVCircleEnabled = true, AimbotEnabled = false, TargetAimbotEnabled = false, ZombieAimbotEnabled = false, ZombieAimbotKeybind = "G", ZombieAimPriority = "Crosshair", StrongLock = true, StickMode = "Back", OrbitRadius = 8, OrbitSpeed = 10, AntiKatanaEnabled = true, FloatingIconEnabled = true, FloatingIconLocked = false, MobileFloatStyle = "Pill", WallcheckEnabled = true,
 		AimbotTeamCheck = true, AutoShootEnabled = false, InfiniteJump = false, SpiderClimb = false,
 		ItemMagnetEnabled = false, ItemMagnetRadius = 60, ESPShowTeammates = false, AimPartName = "Head",
@@ -218,6 +219,7 @@ local function RegisterThemeObject(instance, prop, themeKey)
 	instance[prop] = GetTheme()[themeKey]
 end
 
+local FUI = {}
 local function ApplyTheme(themeName)
 	if not Themes[themeName] then themeName = "Default" end
 	Config.Theme = themeName
@@ -234,17 +236,119 @@ local function ApplyTheme(themeName)
 			end
 		end
 	end
+	if FUI.TopTitleGrad then
+		FUI.TopTitleGrad.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, active.Accent:Lerp(Color3.fromRGB(255, 255, 255), 0.25)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+			ColorSequenceKeypoint.new(1, active.Stroke:Lerp(active.Accent, 0.5))
+		})
+	end
 	if ApplyGuiDesignSurface then pcall(ApplyGuiDesignSurface) end
 	for _, fn in ipairs(ThemeObjects.CustomCallbacks) do pcall(fn, active) end
 	SaveConfig(false)
 end
 local function AddCorner(parent, radius) local c = Instance.new("UICorner")
 	c.CornerRadius = UDim.new(0, radius or 6) c.Parent = parent return c end
+FUI.AttachSpringAndRipple = function(b)
+	if not b or not b:IsA("GuiButton") then return b end
+	if b:GetAttribute("_TRSpringAttached") then return b end
+	b:SetAttribute("_TRSpringAttached", true)
+	b.AutoButtonColor = false
+	local sc = b:FindFirstChildOfClass("UIScale")
+	if not sc then
+		sc = Instance.new("UIScale")
+		sc.Scale = 1
+		sc.Parent = b
+	end
+	b.MouseEnter:Connect(function()
+		TweenService:Create(sc, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1.03 }):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(sc, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 1.0 }):Play()
+	end)
+	b.InputBegan:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			TweenService:Create(sc, TweenInfo.new(0.09, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 0.92 }):Play()
+			pcall(function()
+				local clip = b:FindFirstChild("_TRRippleClip")
+				if not clip then
+					clip = Instance.new("Frame")
+					clip.Name = "_TRRippleClip"
+					clip.Size = UDim2.new(1, 0, 1, 0)
+					clip.BackgroundTransparency = 1
+					clip.ClipsDescendants = true
+					clip.ZIndex = b.ZIndex + 1
+					clip.Parent = b
+					AddCorner(clip, 8)
+				end
+				local ripple = Instance.new("Frame")
+				local relX = inp.Position.X - b.AbsolutePosition.X
+				local relY = inp.Position.Y - b.AbsolutePosition.Y
+				ripple.AnchorPoint = Vector2.new(0.5, 0.5)
+				ripple.Position = UDim2.new(0, relX, 0, relY)
+				ripple.Size = UDim2.new(0, 0, 0, 0)
+				ripple.BackgroundColor3 = GetTheme().Stroke
+				ripple.BackgroundTransparency = 0.45
+				ripple.BorderSizePixel = 0
+				ripple.ZIndex = b.ZIndex + 1
+				ripple.Parent = clip
+				local rc = Instance.new("UICorner", ripple)
+				rc.CornerRadius = UDim.new(1, 0)
+				local maxDim = math.max(b.AbsoluteSize.X, b.AbsoluteSize.Y) * 2.1
+				local tw = TweenService:Create(ripple, TweenInfo.new(0.42, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+					Size = UDim2.new(0, maxDim, 0, maxDim),
+					BackgroundTransparency = 1
+				})
+				tw:Play()
+				tw.Completed:Connect(function()
+					if ripple and ripple.Parent then ripple:Destroy() end
+				end)
+			end)
+		end
+	end)
+	b.InputEnded:Connect(function(inp)
+		if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+			TweenService:Create(sc, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1.0 }):Play()
+		end
+	end)
+	b.MouseButton1Click:Connect(function()
+		sc.Scale = 1.06
+		TweenService:Create(sc, TweenInfo.new(0.34, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1.0 }):Play()
+	end)
+	return b
+end
+FUI.TweenButtonState = function(btn, targetBg, targetTextCol, isOn)
+	if not btn or not btn.Parent then return end
+	local props = { BackgroundColor3 = targetBg }
+	if targetTextCol then props.TextColor3 = targetTextCol end
+	TweenService:Create(btn, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+	if isOn ~= nil then
+		local dot = btn:FindFirstChild("_TRStateBar")
+		if not dot then
+			dot = Instance.new("Frame")
+			dot.Name = "_TRStateBar"
+			dot.AnchorPoint = Vector2.new(0, 0.5)
+			dot.Position = UDim2.new(0, 4, 0.5, 0)
+			dot.Size = UDim2.new(0, 3, 0, 0)
+			dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			dot.BorderSizePixel = 0
+			dot.ZIndex = btn.ZIndex + 2
+			dot.Parent = btn
+			AddCorner(dot, 4)
+		end
+		TweenService:Create(dot, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = isOn and UDim2.new(0, 4, 0, 18) or UDim2.new(0, 3, 0, 0),
+			BackgroundTransparency = isOn and 0.05 or 1
+		}):Play()
+	end
+end
 local function MakeButton(parent, size, pos, text, bgThemeKey, textSize)
 	local b = Instance.new("TextButton") b.Size = size if pos then b.Position = pos end
 	b.Font = Enum.Font.GothamBold b.TextSize = textSize or 12 b.Text = text b.Parent = parent
 	if bgThemeKey then RegisterThemeObject(b, "BackgroundColor3", bgThemeKey) end
-	RegisterThemeObject(b, "TextColor3", "TextPrimary") AddCorner(b, 6) return b end
+	RegisterThemeObject(b, "TextColor3", "TextPrimary") AddCorner(b, 6)
+	FUI.AttachSpringAndRipple(b)
+	return b end
 local function MakeLabel(parent, size, pos, text, font, textSize, themeKey, xAlign)
 	local l = Instance.new("TextLabel") l.Size = size if pos then l.Position = pos end
 	l.BackgroundTransparency = 1 l.Font = font or Enum.Font.GothamSemibold l.TextSize = textSize or 12
@@ -275,11 +379,32 @@ TopBar.BackgroundTransparency = 0.1 TopBar.BorderSizePixel = 0 TopBar.Parent = M
 RegisterThemeObject(TopBar, "BackgroundColor3", "PanelBg") AddCorner(TopBar, 12)
 local TitleLabel = MakeLabel(TopBar, UDim2.new(1, -260, 1, 0), UDim2.new(0, 16, 0, 0), E.Bolt .. " T.R Scripts - Master Script Hub (V95)", Enum.Font.GothamBold, 15, "TextPrimary", Enum.TextXAlignment.Left)
 TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+FUI.TopTitleGrad = Instance.new("UIGradient", TitleLabel)
+do
+	local initTh = GetTheme()
+	FUI.TopTitleGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, initTh.Accent:Lerp(Color3.fromRGB(255, 255, 255), 0.25)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(1, initTh.Stroke:Lerp(initTh.Accent, 0.5))
+	})
+end
+FUI.TopBarLaser = Instance.new("Frame", TopBar)
+FUI.TopBarLaser.Size = UDim2.new(1, -24, 0, 2)
+FUI.TopBarLaser.Position = UDim2.new(0, 12, 1, -2)
+FUI.TopBarLaser.BorderSizePixel = 0
+FUI.TopBarLaser.BackgroundTransparency = 0.15
+RegisterThemeObject(FUI.TopBarLaser, "BackgroundColor3", "Accent")
+FUI.TopBarLaserGrad = Instance.new("UIGradient", FUI.TopBarLaser)
+FUI.TopBarLaserGrad.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.92),
+	NumberSequenceKeypoint.new(0.5, 0.0),
+	NumberSequenceKeypoint.new(1, 0.92)
+})
 local SubBadge = Instance.new("TextLabel") SubBadge.Size = UDim2.new(0, 125, 0, 24)
-SubBadge.Position = UDim2.new(1, -242, 0.5, -12) SubBadge.BackgroundTransparency = 0.15
-SubBadge.Font = Enum.Font.GothamSemibold SubBadge.TextSize = 11 SubBadge.Text = "Toggle UI: [X]"
+SubBadge.Position = UDim2.new(1, -242, 0.5, -12) SubBadge.BackgroundTransparency = 0.12
+SubBadge.Font = Enum.Font.GothamBold SubBadge.TextSize = 11 SubBadge.Text = E.Bolt .. " T.R V95 [X]"
 SubBadge.Parent = TopBar RegisterThemeObject(SubBadge, "BackgroundColor3", "CardBg")
-RegisterThemeObject(SubBadge, "TextColor3", "TextSecondary") AddCorner(SubBadge, 6)
+RegisterThemeObject(SubBadge, "TextColor3", "Accent") AddCorner(SubBadge, 6)
 local SaveBtn = MakeButton(TopBar, UDim2.new(0, 34, 0, 28), UDim2.new(1, -108, 0.5, -14), E.Save, "CardBg", 14)
 SaveFeedbackCallback = function() SaveBtn.Text = E.Check task.delay(1.1, function()
 		if SaveBtn and SaveBtn.Parent then SaveBtn.Text = E.Save end end) end
@@ -289,6 +414,7 @@ local CloseBtn = Instance.new("TextButton") CloseBtn.Size = UDim2.new(0, 28, 0, 
 CloseBtn.Position = UDim2.new(1, -30, 0.5, -14) CloseBtn.BackgroundColor3 = Color3.fromRGB(175, 38, 55)
 CloseBtn.Font = Enum.Font.GothamBold CloseBtn.TextSize = 14 CloseBtn.Text = E.Close
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255) CloseBtn.Parent = TopBar AddCorner(CloseBtn, 6)
+FUI.AttachSpringAndRipple(CloseBtn)
 local RestingPosition = MainFrame.Position local isMenuVisible = true local isClosingPermanently = false
 local activeWindowTweens = {} local SyncAimbotFovCircleVisibility = nil
 local draggingGui, resizingMode = false, nil do local dragStartPos, startFramePos = nil, nil
@@ -362,7 +488,6 @@ end
 local FloatingPill = nil
 local MobileSquareIcon = nil
 local isFloatingPillLocked = (Config.FloatingIconLocked == true)
-local FUI = {}
 local function SyncFloatingPillState()
 	local eff = GetTheme()
 	local lockedCol = Color3.fromRGB(245, 166, 35)
@@ -965,6 +1090,10 @@ do
 			if FUI.SquareHaloGrad then FUI.SquareHaloGrad.Rotation = haloRot end
 			if FUI.SquareHaloStroke then FUI.SquareHaloStroke.Transparency = baseHaloT + (breathe * 0.10) end
 		end
+		if isMenuVisible then
+			if FUI.TopTitleGrad then FUI.TopTitleGrad.Offset = Vector2.new(textSweepX, 0) end
+			if FUI.TopBarLaserGrad then FUI.TopBarLaserGrad.Offset = Vector2.new(sweepX, 0) end
+		end
 	end))
 
 	UpdateFloatingPillVisibility()
@@ -1245,10 +1374,10 @@ if isMobileDevice then
 		return b
 	end
 
-	local mqAimBtn = CreateMobileQuickBtn(28, "Aim [Q]")
-	local mqTAimBtn = CreateMobileQuickBtn(84, "T-Aim [T]")
-	local mqShootBtn = CreateMobileQuickBtn(140, "Shoot [Z]")
-	local mqFlyBtn = CreateMobileQuickBtn(196, "Fly [E]")
+	local mqAimBtn = FUI.AttachSpringAndRipple(CreateMobileQuickBtn(28, "Aim [Q]"))
+	local mqTAimBtn = FUI.AttachSpringAndRipple(CreateMobileQuickBtn(84, "T-Aim [T]"))
+	local mqShootBtn = FUI.AttachSpringAndRipple(CreateMobileQuickBtn(140, "Shoot [Z]"))
+	local mqFlyBtn = FUI.AttachSpringAndRipple(CreateMobileQuickBtn(196, "Fly [E]"))
 
 	mqAimBtn.MouseButton1Click:Connect(function()
 		if genv._TR_MobileToggleAimbot then genv._TR_MobileToggleAimbot() end
@@ -1266,10 +1395,10 @@ if isMobileDevice then
 	genv._TR_UpdateMobileQuickBar = function(aimOn, tAimOn, shootOn, flyOn)
 		local colOn = Color3.fromRGB(46, 204, 113)
 		local colOff = Color3.fromRGB(185, 52, 52)
-		if mqAimBtn and mqAimBtn.Parent then mqAimBtn.BackgroundColor3 = aimOn and colOn or colOff end
-		if mqTAimBtn and mqTAimBtn.Parent then mqTAimBtn.BackgroundColor3 = tAimOn and colOn or colOff end
-		if mqShootBtn and mqShootBtn.Parent then mqShootBtn.BackgroundColor3 = shootOn and colOn or colOff end
-		if mqFlyBtn and mqFlyBtn.Parent then mqFlyBtn.BackgroundColor3 = flyOn and colOn or colOff end
+		if mqAimBtn and mqAimBtn.Parent then FUI.TweenButtonState(mqAimBtn, aimOn and colOn or colOff) end
+		if mqTAimBtn and mqTAimBtn.Parent then FUI.TweenButtonState(mqTAimBtn, tAimOn and colOn or colOff) end
+		if mqShootBtn and mqShootBtn.Parent then FUI.TweenButtonState(mqShootBtn, shootOn and colOn or colOff) end
+		if mqFlyBtn and mqFlyBtn.Parent then FUI.TweenButtonState(mqFlyBtn, flyOn and colOn or colOff) end
 	end
 end
 local MainGlassGrad = Instance.new("UIGradient", MainFrame)
@@ -1904,6 +2033,19 @@ do
 	FUI.QuickSearchClearBtn.Text = E.Close
 	FUI.QuickSearchClearBtn.ZIndex = 9
 	AddCorner(FUI.QuickSearchClearBtn, 6)
+	FUI.AttachSpringAndRipple(FUI.QuickSearchClearBtn)
+	FUI.QuickSearchInput.Focused:Connect(function()
+		TweenService:Create(qsStroke, TweenInfo.new(0.20, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 0.05,
+			Thickness = 1.8
+		}):Play()
+	end)
+	FUI.QuickSearchInput.FocusLost:Connect(function()
+		TweenService:Create(qsStroke, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = 0.45,
+			Thickness = 1.2
+		}):Play()
+	end)
 
 	FUI.SearchResultsPage = Instance.new("ScrollingFrame")
 	FUI.SearchResultsPage.Name = "TR_SearchResultsPage"
@@ -1938,8 +2080,7 @@ FUI.RefreshSearchCardsVisuals = function()
 			local ok, st = pcall(cEntry.GetState)
 			local isOn = (ok and st == true)
 			cEntry.ToggleBtn.Text = isOn and "ON" or "OFF"
-			cEntry.ToggleBtn.BackgroundColor3 = isOn and theme.Accent or theme.PanelBg
-			cEntry.ToggleBtn.TextColor3 = isOn and Color3.fromRGB(255, 255, 255) or theme.TextPrimary
+			FUI.TweenButtonState(cEntry.ToggleBtn, isOn and theme.Accent or theme.PanelBg, isOn and Color3.fromRGB(255, 255, 255) or theme.TextPrimary, isOn)
 		end
 		if cEntry.JumpBtn then
 			cEntry.JumpBtn.BackgroundColor3 = theme.PanelBg
@@ -1999,11 +2140,26 @@ FUI.SwitchToTab = function(tabName)
 		FUI.QuickSearchInput.Text = ""
 	end
 	if FUI.SearchResultsPage then FUI.SearchResultsPage.Visible = false end
+	local theme = GetTheme()
 	for name, data in pairs(Tabs) do
-		data.Page.Visible = (name == tabName)
-		local theme = GetTheme()
-		data.Button.BackgroundColor3 = (name == ActiveTabName) and theme.Accent or theme.CardBg
-		data.Button.BackgroundTransparency = (name == ActiveTabName) and 0.02 or 0.2
+		local isAct = (name == tabName)
+		data.Page.Visible = isAct
+		TweenService:Create(data.Button, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			BackgroundColor3 = isAct and theme.Accent or theme.CardBg,
+			BackgroundTransparency = isAct and 0.02 or 0.22
+		}):Play()
+		if data.Indicator then
+			TweenService:Create(data.Indicator, TweenInfo.new(0.26, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Size = isAct and UDim2.new(0, 4, 0, 20) or UDim2.new(0, 0, 0, 0),
+				BackgroundColor3 = isAct and Color3.fromRGB(255, 255, 255) or theme.Accent
+			}):Play()
+		end
+		if isAct and data.Page then
+			data.Page.Position = UDim2.new(0, 8, 0, 68)
+			TweenService:Create(data.Page, TweenInfo.new(0.30, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Position = UDim2.new(0, 8, 0, 46)
+			}):Play()
+		end
 	end
 	if tabName ~= "Avatar Changer" and genv._TR_StopAvatarHoverPreview then pcall(genv._TR_StopAvatarHoverPreview) end
 	if tabName == "Player Radar" and genv._TR_RefreshRadar then pcall(genv._TR_RefreshRadar)
@@ -2013,10 +2169,19 @@ end
 
 local function CreateTab(tabName, iconText, order)
 	local TabBtn = Instance.new("TextButton") TabBtn.LayoutOrder = order
-	TabBtn.Size = UDim2.new(1, -12, 0, 33) TabBtn.BackgroundTransparency = 0.1
-	TabBtn.Font = Enum.Font.GothamSemibold TabBtn.TextSize = 12 TabBtn.ZIndex = 6
-	TabBtn.TextXAlignment = Enum.TextXAlignment.Left TabBtn.Text = "   " .. iconText .. "  " .. tabName
+	TabBtn.Size = UDim2.new(1, -12, 0, 35) TabBtn.BackgroundTransparency = 0.1
+	TabBtn.Font = Enum.Font.GothamBold TabBtn.TextSize = 12 TabBtn.ZIndex = 6
+	TabBtn.TextXAlignment = Enum.TextXAlignment.Left TabBtn.Text = "    " .. iconText .. "  " .. tabName
 	TabBtn.Parent = Sidebar RegisterThemeObject(TabBtn, "TextColor3", "TextPrimary") AddCorner(TabBtn, 8)
+	FUI.AttachSpringAndRipple(TabBtn)
+	local Ind = Instance.new("Frame", TabBtn)
+	Ind.AnchorPoint = Vector2.new(0, 0.5)
+	Ind.Position = UDim2.new(0, 4, 0.5, 0)
+	Ind.Size = UDim2.new(0, 0, 0, 0)
+	Ind.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Ind.BorderSizePixel = 0
+	Ind.ZIndex = 7
+	AddCorner(Ind, 4)
 	local Page = Instance.new("ScrollingFrame") Page.Size = UDim2.new(1, -16, 1, -54)
 	Page.Position = UDim2.new(0, 8, 0, 46) Page.BackgroundTransparency = 1 Page.BorderSizePixel = 0
 	Page.ScrollBarThickness = 4 Page.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2028,25 +2193,55 @@ local function CreateTab(tabName, iconText, order)
 	local PagePad = Instance.new("UIPadding") PagePad.PaddingTop = UDim.new(0, 4)
 	PagePad.PaddingBottom = UDim.new(0, 10) PagePad.PaddingLeft = UDim.new(0, 4)
 	PagePad.PaddingRight = UDim.new(0, 8) PagePad.Parent = Page
-	Tabs[tabName] = { Button = TabBtn, Page = Page } local function RefreshTabVisuals()
+	Tabs[tabName] = { Button = TabBtn, Page = Page, Indicator = Ind } local function RefreshTabVisuals()
 		local theme = GetTheme() for name, data in pairs(Tabs) do
-			data.Button.BackgroundColor3 = (name == ActiveTabName) and theme.Accent or theme.CardBg
-			data.Button.BackgroundTransparency = (name == ActiveTabName) and 0.02 or 0.2 end end
+			local isAct = (name == ActiveTabName)
+			data.Button.BackgroundColor3 = isAct and theme.Accent or theme.CardBg
+			data.Button.BackgroundTransparency = isAct and 0.02 or 0.2
+			if data.Indicator then
+				data.Indicator.Size = isAct and UDim2.new(0, 4, 0, 20) or UDim2.new(0, 0, 0, 0)
+			end end end
 	table.insert(ThemeObjects.CustomCallbacks, RefreshTabVisuals)
 	TabBtn.MouseButton1Click:Connect(function()
 		FUI.SwitchToTab(tabName)
 	end)
 	if order == 1 then ActiveTabName = tabName Page.Visible = true RefreshTabVisuals() end return Page end
-local function CreateSectionHeader(parent, title, order) local Header = Instance.new("TextLabel")
+local function CreateSectionHeader(parent, title, order)
+	local Header = Instance.new("TextLabel")
 	Header.LayoutOrder = order Header.Size = UDim2.new(1, 0, 0, 24) Header.BackgroundTransparency = 1
 	Header.Font = Enum.Font.GothamBold Header.TextSize = 14 Header.TextXAlignment = Enum.TextXAlignment.Left
-	Header.Text = "  " .. title Header.Parent = parent RegisterThemeObject(Header, "TextColor3", "Accent")
-	return Header end local function CreateCard(parent, height, order) local Card = Instance.new("Frame")
+	Header.Text = "   " .. title Header.Parent = parent RegisterThemeObject(Header, "TextColor3", "Accent")
+	local Bar = Instance.new("Frame", Header)
+	Bar.AnchorPoint = Vector2.new(0, 0.5)
+	Bar.Position = UDim2.new(0, 2, 0.5, 0)
+	Bar.Size = UDim2.new(0, 3, 0, 14)
+	Bar.BorderSizePixel = 0
+	RegisterThemeObject(Bar, "BackgroundColor3", "Accent")
+	AddCorner(Bar, 3)
+	return Header
+end
+local function CreateCard(parent, height, order)
+	local Card = Instance.new("Frame")
 	Card.LayoutOrder = order Card.Size = UDim2.new(1, 0, 0, height) Card.BackgroundTransparency = 0.12
 	Card.BorderSizePixel = 0 Card.ClipsDescendants = true Card.Parent = parent RegisterThemeObject(Card, "BackgroundColor3", "CardBg")
 	AddCorner(Card, 8) local Stroke = Instance.new("UIStroke") Stroke.Thickness = 1
 	Stroke.Transparency = 0.6 Stroke.Parent = Card RegisterThemeObject(Stroke, "Color", "Stroke")
-	return Card end local RightNotifHolder = Instance.new("Frame")
+	Card.MouseEnter:Connect(function()
+		local curD = Config.GuiDesign or "Default"
+		local hoverTrans = (curD == "CyberHud" and 0.0) or (curD == "LiquidGlass" and 0.08) or 0.22
+		TweenService:Create(Stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = hoverTrans
+		}):Play()
+	end)
+	Card.MouseLeave:Connect(function()
+		local curD = Config.GuiDesign or "Default"
+		local restTrans = (curD == "CyberHud" and 0.04) or (curD == "LiquidGlass" and 0.24) or 0.60
+		TweenService:Create(Stroke, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Transparency = restTrans
+		}):Play()
+	end)
+	return Card
+end local RightNotifHolder = Instance.new("Frame")
 RightNotifHolder.Name = "TR_RightNotifications"
 RightNotifHolder.AnchorPoint = Vector2.new(1, 1)
 RightNotifHolder.Position = UDim2.new(1, -14, 1, -18)
@@ -2220,16 +2415,70 @@ FUI.RegisterSearchFunction = function(info)
 end
 
 local function CreateToggle(parent, labelText, initialValue, order, callback)
-	local Card = CreateCard(parent, 42, order)
-	local Label = MakeLabel(Card, UDim2.new(1, -110, 1, 0), UDim2.new(0, 14, 0, 0), labelText, Enum.Font.GothamSemibold, 13, "TextPrimary", Enum.TextXAlignment.Left)
-	local ToggleBtn = MakeButton(Card, UDim2.new(0, 84, 0, 28), UDim2.new(1, -96, 0.5, -14), "OFF", nil, 12)
-	local state = initialValue and true or false local function UpdateToggleVisual()
-		local theme = GetTheme() ToggleBtn.Text = state and "ON" or "OFF"
-		ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.PanelBg
-		if FUI.RefreshSearchCardsVisuals then pcall(FUI.RefreshSearchCardsVisuals) end end
-	table.insert(ThemeObjects.CustomCallbacks, UpdateToggleVisual) UpdateToggleVisual()
-	local function SetState(newState, triggerCallback) state = newState and true or false
-		UpdateToggleVisual() if triggerCallback ~= false then NotifyFeatureToggle(labelText, state) if callback then pcall(callback, state) end end end
+	local Card = CreateCard(parent, 44, order)
+	local EdgeBar = Instance.new("Frame", Card)
+	EdgeBar.AnchorPoint = Vector2.new(0, 0.5)
+	EdgeBar.Position = UDim2.new(0, 4, 0.5, 0)
+	EdgeBar.Size = UDim2.new(0, 3, 0, 0)
+	EdgeBar.BorderSizePixel = 0
+	RegisterThemeObject(EdgeBar, "BackgroundColor3", "Accent")
+	AddCorner(EdgeBar, 4)
+	local Label = MakeLabel(Card, UDim2.new(1, -114, 1, 0), UDim2.new(0, 14, 0, 0), labelText, Enum.Font.GothamSemibold, 13, "TextPrimary", Enum.TextXAlignment.Left)
+	local ToggleBtn = MakeButton(Card, UDim2.new(0, 86, 0, 28), UDim2.new(1, -98, 0.5, -14), "", nil, 11)
+	local tCorner = ToggleBtn:FindFirstChildOfClass("UICorner")
+	if tCorner then tCorner.CornerRadius = UDim.new(1, 0) end
+	local Knob = Instance.new("Frame", ToggleBtn)
+	Knob.AnchorPoint = Vector2.new(0, 0.5)
+	Knob.Size = UDim2.new(0, 20, 0, 20)
+	Knob.Position = UDim2.new(0, 4, 0.5, 0)
+	Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Knob.BorderSizePixel = 0
+	Knob.ZIndex = ToggleBtn.ZIndex + 2
+	AddCorner(Knob, 10)
+	local StateLbl = Instance.new("TextLabel", ToggleBtn)
+	StateLbl.Size = UDim2.new(1, -28, 1, 0)
+	StateLbl.Position = UDim2.new(0, 26, 0, 0)
+	StateLbl.BackgroundTransparency = 1
+	StateLbl.Font = Enum.Font.GothamBold
+	StateLbl.TextSize = 11
+	StateLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+	StateLbl.ZIndex = ToggleBtn.ZIndex + 2
+	local state = initialValue and true or false
+	local function UpdateToggleVisual(animate)
+		local theme = GetTheme()
+		StateLbl.Text = state and "ON" or "OFF"
+		local targetPos = state and UDim2.new(1, -24, 0.5, 0) or UDim2.new(0, 4, 0.5, 0)
+		local targetTxtPos = state and UDim2.new(0, 6, 0, 0) or UDim2.new(0, 24, 0, 0)
+		local targetBg = state and theme.Accent or theme.PanelBg
+		local targetBarSize = state and UDim2.new(0, 4, 1, -12) or UDim2.new(0, 3, 0, 0)
+		if animate then
+			Knob.Size = UDim2.new(0, 25, 0, 20)
+			TweenService:Create(Knob, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Position = targetPos,
+				Size = UDim2.new(0, 20, 0, 20)
+			}):Play()
+			TweenService:Create(StateLbl, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = targetTxtPos }):Play()
+			TweenService:Create(ToggleBtn, TweenInfo.new(0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { BackgroundColor3 = targetBg }):Play()
+			TweenService:Create(EdgeBar, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = targetBarSize }):Play()
+		else
+			Knob.Position = targetPos
+			Knob.Size = UDim2.new(0, 20, 0, 20)
+			StateLbl.Position = targetTxtPos
+			ToggleBtn.BackgroundColor3 = targetBg
+			EdgeBar.Size = targetBarSize
+		end
+		if FUI.RefreshSearchCardsVisuals then pcall(FUI.RefreshSearchCardsVisuals) end
+	end
+	table.insert(ThemeObjects.CustomCallbacks, function() UpdateToggleVisual(false) end)
+	UpdateToggleVisual(false)
+	local function SetState(newState, triggerCallback)
+		state = newState and true or false
+		UpdateToggleVisual(true)
+		if triggerCallback ~= false then
+			NotifyFeatureToggle(labelText, state)
+			if callback then pcall(callback, state) end
+		end
+	end
 	ToggleBtn.MouseButton1Click:Connect(function() SetState(not state, true) end)
 	if FUI.RegisterSearchFunction then
 		FUI.RegisterSearchFunction({
@@ -2241,28 +2490,56 @@ local function CreateToggle(parent, labelText, initialValue, order, callback)
 	end
 	return { SetState = SetState, GetState = function() return state end, Card = Card } end
 local function CreateSlider(parent, labelText, minVal, maxVal, initialVal, order, callback)
-	local Card = CreateCard(parent, 58, order)
+	local Card = CreateCard(parent, 60, order)
 	local Title = MakeLabel(Card, UDim2.new(0.65, 0, 0, 22), UDim2.new(0, 14, 0, 6), labelText, Enum.Font.GothamSemibold, 13, "TextPrimary", Enum.TextXAlignment.Left)
 	local ValueLabel = MakeLabel(Card, UDim2.new(0.3, -14, 0, 22), UDim2.new(0.7, 0, 0, 6), tostring(initialVal), Enum.Font.GothamBold, 13, "Accent", Enum.TextXAlignment.Right)
 	local BarBg = Instance.new("Frame") BarBg.Size = UDim2.new(1, -28, 0, 12)
-	BarBg.Position = UDim2.new(0, 14, 0, 34) BarBg.BorderSizePixel = 0 BarBg.Parent = Card
+	BarBg.Position = UDim2.new(0, 14, 0, 36) BarBg.BorderSizePixel = 0 BarBg.Parent = Card
 	RegisterThemeObject(BarBg, "BackgroundColor3", "PanelBg") AddCorner(BarBg, 10)
 	local Fill = Instance.new("Frame")
 	local initAlpha = math.clamp((initialVal - minVal) / (maxVal - minVal), 0, 1)
 	Fill.Size = UDim2.new(initAlpha, 0, 1, 0) Fill.BorderSizePixel = 0 Fill.Parent = BarBg
-	RegisterThemeObject(Fill, "BackgroundColor3", "Accent") AddCorner(Fill, 10) local sliding = false
+	RegisterThemeObject(Fill, "BackgroundColor3", "Accent") AddCorner(Fill, 10)
+	local Thumb = Instance.new("Frame", Fill)
+	Thumb.AnchorPoint = Vector2.new(0.5, 0.5)
+	Thumb.Position = UDim2.new(1, 0, 0.5, 0)
+	Thumb.Size = UDim2.new(0, 16, 0, 16)
+	Thumb.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	Thumb.BorderSizePixel = 0
+	Thumb.ZIndex = Fill.ZIndex + 2
+	AddCorner(Thumb, 10)
+	local ThumbStroke = Instance.new("UIStroke", Thumb)
+	ThumbStroke.Thickness = 2
+	RegisterThemeObject(ThumbStroke, "Color", "Accent")
+	local sliding = false
 	local function UpdateFromInput(inputPosX)
 		local relX = math.clamp(inputPosX - BarBg.AbsolutePosition.X, 0, BarBg.AbsoluteSize.X)
 		local alpha = (BarBg.AbsoluteSize.X > 0) and (relX / BarBg.AbsoluteSize.X) or 0
 		local value = math.floor(minVal + (maxVal - minVal) * alpha + 0.5)
-		Fill.Size = UDim2.new(alpha, 0, 1, 0) ValueLabel.Text = tostring(value)
-		if callback then pcall(callback, value) end end 	BarBg.InputBegan:Connect(function(input)
+		TweenService:Create(Fill, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new(alpha, 0, 1, 0) }):Play()
+		ValueLabel.Text = tostring(value)
+		if callback then pcall(callback, value) end
+	end
+	BarBg.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			sliding = true UpdateFromInput(input.Position.X) input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then sliding = false end end) end end)
+			sliding = true
+			TweenService:Create(Thumb, TweenInfo.new(0.20, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0, 22, 0, 22) }):Play()
+			UpdateFromInput(input.Position.X)
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					sliding = false
+					TweenService:Create(Thumb, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0, 16, 0, 16) }):Play()
+				end
+			end)
+		end
+	end)
 	if UserInputService.InputEnded then table.insert(Connections, UserInputService.InputEnded:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			sliding = false end end)) end
+			if sliding then
+				sliding = false
+				TweenService:Create(Thumb, TweenInfo.new(0.24, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.new(0, 16, 0, 16) }):Play()
+			end
+		end end)) end
 	table.insert(Connections, UserInputService.InputChanged:Connect(function(input)
 		if not sliding then return end
 		if input.UserInputType == Enum.UserInputType.MouseMovement then
@@ -2272,7 +2549,7 @@ local function CreateSlider(parent, labelText, minVal, maxVal, initialVal, order
 		elseif input.UserInputType == Enum.UserInputType.Touch then
 			UpdateFromInput(input.Position.X) end end)) return { SetValue = function(val)
 			local clamped = math.clamp(val, minVal, maxVal)
-			Fill.Size = UDim2.new((clamped - minVal) / (maxVal - minVal), 0, 1, 0)
+			TweenService:Create(Fill, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.new((clamped - minVal) / (maxVal - minVal), 0, 1, 0) }):Play()
 			ValueLabel.Text = tostring(clamped) end } end
 --==============================================================================
 -- 6. CREATE ALL 8 MODULAR TABS (WITH RUNTIME EMOJIS)
@@ -2314,10 +2591,7 @@ local function FindKeybindConflict(keyName, ignoreSlot)
 		return "Target Player Aimbot"
 	end
 	if ignoreSlot ~= "AutoShoot" and (Config.AutoShootKeybind or "Z") == keyName then
-		return "Normal Auto Shoot"
-	end
-	if ignoreSlot ~= "AimbotAutoShoot" and (Config.AimbotAutoShootKeybind or "V") == keyName then
-		return "Aimbot Auto Shoot"
+		return "Auto Shoot"
 	end
 	if ignoreSlot ~= "ZombieAimbot" and (Config.ZombieAimbotKeybind or "G") == keyName then
 		return "Zombie & Gargoyle Aimbot"
@@ -2395,20 +2669,19 @@ local function RefreshDesignButtons()
 	local curD = Config.GuiDesign or "Default"
 	for id, btn in pairs(DesignButtons) do
 		local active = (id == curD)
-		btn.BackgroundColor3 = active and theme.Accent or theme.PanelBg
-		btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or theme.TextPrimary
+		FUI.TweenButtonState(btn, active and theme.Accent or theme.PanelBg, active and Color3.fromRGB(255, 255, 255) or theme.TextPrimary, active)
 		btn.Text = (active and "[ON] " or "") .. (id == "Default" and "1. Default" or (id == "LiquidGlass" and "2. Liquid Glass" or "3. Cyber-HUD"))
 	end
 	if ThemeBtnsMap["Default"] then
 		if curD == "LiquidGlass" then
-			ThemeBtnsMap["Default"].Text = "Liquid Glass (Clear)"
-			ThemeBtnsMap["Default"].BackgroundColor3 = Color3.fromRGB(70, 165, 255)
+			ThemeBtnsMap["Default"].Text = E.Bolt .. " Liquid Glass (Clear)"
+			FUI.TweenButtonState(ThemeBtnsMap["Default"], Color3.fromRGB(70, 165, 255))
 		elseif curD == "CyberHud" then
-			ThemeBtnsMap["Default"].Text = "Cyber Neon (Default)"
-			ThemeBtnsMap["Default"].BackgroundColor3 = Color3.fromRGB(0, 210, 235)
+			ThemeBtnsMap["Default"].Text = E.Bolt .. " Cyber Neon (Default)"
+			FUI.TweenButtonState(ThemeBtnsMap["Default"], Color3.fromRGB(0, 210, 235))
 		else
-			ThemeBtnsMap["Default"].Text = "Default"
-			ThemeBtnsMap["Default"].BackgroundColor3 = Themes["Default"].Accent
+			ThemeBtnsMap["Default"].Text = E.Bolt .. " T.R Default"
+			FUI.TweenButtonState(ThemeBtnsMap["Default"], Themes["Default"].Accent)
 		end
 	end
 end
@@ -2417,6 +2690,7 @@ for idx, dOpt in ipairs(DesignOptions) do
 	local DBtn = Instance.new("TextButton")
 	DBtn.LayoutOrder = idx DBtn.Font = Enum.Font.GothamBold DBtn.TextSize = 11
 	DBtn.Text = dOpt.Label DBtn.Parent = DesignCard AddCorner(DBtn, 6)
+	FUI.AttachSpringAndRipple(DBtn)
 	DesignButtons[dOpt.Id] = DBtn
 	DBtn.MouseButton1Click:Connect(function()
 		if genv._TR_ApplyGuiDesign then genv._TR_ApplyGuiDesign(dOpt.Id, true) end
@@ -2443,6 +2717,7 @@ for idx, themeName in ipairs(ThemeOrder) do
 	TBtn.Font = Enum.Font.GothamBold TBtn.TextSize = 12
 	TBtn.TextColor3 = Color3.fromRGB(245, 245, 250) TBtn.Text = themeName
 	TBtn.Parent = ThemeCard AddCorner(TBtn, 6)
+	FUI.AttachSpringAndRipple(TBtn)
 	ThemeBtnsMap[themeName] = TBtn
 	TBtn.MouseButton1Click:Connect(function() ApplyTheme(themeName) end)
 end
@@ -2471,8 +2746,7 @@ local function RefreshAnimButtons()
 	local theme = GetTheme() local curAnim = Config.Animation or "Default"
 	for id, btn in pairs(AnimButtons) do
 		local active = (id == curAnim)
-		btn.BackgroundColor3 = active and theme.Accent or theme.PanelBg
-		btn.TextColor3 = active and Color3.fromRGB(245, 245, 250) or theme.TextPrimary
+		FUI.TweenButtonState(btn, active and theme.Accent or theme.PanelBg, active and Color3.fromRGB(245, 245, 250) or theme.TextPrimary, active)
 	end
 end
 table.insert(ThemeObjects.CustomCallbacks, RefreshAnimButtons)
@@ -2480,6 +2754,7 @@ for idx, animOpt in ipairs(AnimOptions) do
 	local ABtn = Instance.new("TextButton")
 	ABtn.LayoutOrder = idx ABtn.Font = Enum.Font.GothamBold ABtn.TextSize = 12
 	ABtn.Text = animOpt.Label ABtn.Parent = AnimCard AddCorner(ABtn, 6)
+	FUI.AttachSpringAndRipple(ABtn)
 	AnimButtons[animOpt.Id] = ABtn
 	ABtn.MouseButton1Click:Connect(function()
 		Config.Animation = animOpt.Id RefreshAnimButtons() SaveConfig(false)
@@ -2502,7 +2777,8 @@ local mouseLockToggleBtn = Instance.new("TextButton", MouseLockCard)
 mouseLockToggleBtn.Size = UDim2.new(0.5, -14, 0, 34)
 mouseLockToggleBtn.Position = UDim2.new(0, 10, 0, 10) mouseLockToggleBtn.Font = Enum.Font.GothamBold
 mouseLockToggleBtn.TextSize = 12 mouseLockToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddCorner(mouseLockToggleBtn, 6) local mouseLockStatusLbl = Instance.new("TextLabel", MouseLockCard)
+AddCorner(mouseLockToggleBtn, 6) FUI.AttachSpringAndRipple(mouseLockToggleBtn)
+local mouseLockStatusLbl = Instance.new("TextLabel", MouseLockCard)
 mouseLockStatusLbl.Size = UDim2.new(0.5, -14, 0, 34)
 mouseLockStatusLbl.Position = UDim2.new(0.5, 4, 0, 10) mouseLockStatusLbl.BackgroundTransparency = 0.15
 mouseLockStatusLbl.Font = Enum.Font.GothamSemibold mouseLockStatusLbl.TextSize = 12
@@ -2519,10 +2795,11 @@ mouseLockKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 mouseLockKeyDeleteBtn.Font = Enum.Font.GothamBold mouseLockKeyDeleteBtn.TextSize = 11
 mouseLockKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 mouseLockKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(mouseLockKeyDeleteBtn, 6)
+FUI.AttachSpringAndRipple(mouseLockKeyDeleteBtn)
 RefreshMouseLockUI = function() local k = Config.MouseLockKeybind or "None"
 	mouseLockKeyAssignBtn.Text = "Bind Key: [" .. k .. "]"
 	mouseLockToggleBtn.Text = "Mouse Lock [" .. k .. "]: " .. (CursorUnlockedOverride and "ON" or "OFF")
-	mouseLockToggleBtn.BackgroundColor3 = CursorUnlockedOverride and Color3.fromRGB(38, 168, 92) or Color3.fromRGB(185, 52, 52)
+	FUI.TweenButtonState(mouseLockToggleBtn, CursorUnlockedOverride and Color3.fromRGB(38, 168, 92) or Color3.fromRGB(185, 52, 52), nil, CursorUnlockedOverride)
 	mouseLockStatusLbl.Text = CursorUnlockedOverride and "Shift Lock: ACTIVE" or "Shift Lock: INACTIVE" end
 if FUI.RegisterSearchFunction then
 	FUI.RegisterSearchFunction({
@@ -2626,8 +2903,7 @@ if isMobileDevice then
 		local curS = Config.MobileFloatStyle or "Pill"
 		for id, b in pairs(MobStyleBtns) do
 			local act = (id == curS)
-			b.BackgroundColor3 = act and th.Accent or th.PanelBg
-			b.TextColor3 = act and Color3.fromRGB(255, 255, 255) or th.TextPrimary
+			FUI.TweenButtonState(b, act and th.Accent or th.PanelBg, act and Color3.fromRGB(255, 255, 255) or th.TextPrimary, act)
 			b.Text = (act and "[ON] " or "") .. (id == "Pill" and "1. Default Pill" or "2. Mini Square [T.R]")
 		end
 	end
@@ -2635,7 +2911,7 @@ if isMobileDevice then
 	for idx, sOpt in ipairs(MobStyleOpts) do
 		local sb = Instance.new("TextButton", MobFloatStyleCard)
 		sb.LayoutOrder = idx sb.Font = Enum.Font.GothamBold sb.TextSize = 11
-		sb.Text = sOpt.Label AddCorner(sb, 6)
+		sb.Text = sOpt.Label AddCorner(sb, 6) FUI.AttachSpringAndRipple(sb)
 		MobStyleBtns[sOpt.Id] = sb
 		sb.MouseButton1Click:Connect(function()
 			Config.MobileFloatStyle = sOpt.Id
@@ -2809,7 +3085,7 @@ ActiveKeybindCaptureCallback = nil local function RebuildWaypointsUI()
 		DelBtn.Position = UDim2.new(1, -42, 0.5, -14) DelBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 		DelBtn.Font = Enum.Font.GothamBold DelBtn.TextSize = 13
 		DelBtn.TextColor3 = Color3.fromRGB(255, 255, 255) DelBtn.Text = E.Trash DelBtn.Parent = Row
-		AddCorner(DelBtn, 6) DelBtn.MouseButton1Click:Connect(function()
+		AddCorner(DelBtn, 6) FUI.AttachSpringAndRipple(DelBtn) DelBtn.MouseButton1Click:Connect(function()
 			table.remove(savedConfig.Waypoints, idx) SaveConfig(false) RebuildWaypointsUI() end) end end
 AddWaypointBtn.MouseButton1Click:Connect(function() local root = GetRootPart() if root then
 		local pos = root.Position table.insert(savedConfig.Waypoints, {
@@ -2933,8 +3209,7 @@ local function RefreshStickUI()
 	local theme = GetTheme()
 	for id, btn in pairs(StickModeBtns) do
 		local active = (StickMode == id)
-		btn.BackgroundColor3 = active and theme.Accent or theme.PanelBg
-		btn.TextColor3 = active and Color3.fromRGB(245, 245, 250) or theme.TextPrimary
+		FUI.TweenButtonState(btn, active and theme.Accent or theme.PanelBg, active and Color3.fromRGB(245, 245, 250) or theme.TextPrimary, active)
 	end
 	if StickTarget and StickTarget.Parent then
 		StickStatusLbl.Text = string.format("STUCK TO: %s (@%s) [%s]", tostring(StickTarget.DisplayName), tostring(StickTarget.Name), string.upper(StickMode))
@@ -2954,6 +3229,7 @@ for idx, mInfo in ipairs(StickModesList) do
 	mBtn.Text = mInfo.Label
 	mBtn.Parent = StickModeRow
 	AddCorner(mBtn, 6)
+	FUI.AttachSpringAndRipple(mBtn)
 	StickModeBtns[mInfo.Id] = mBtn
 	mBtn.MouseButton1Click:Connect(function()
 		StickMode = mInfo.Id
@@ -3450,11 +3726,11 @@ masterFlightToggleBtn.Size = UDim2.new(0.5, -14, 0, 34)
 masterFlightToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 masterFlightToggleBtn.Font = Enum.Font.GothamBold masterFlightToggleBtn.TextSize = 12
 masterFlightToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-masterFlightToggleBtn.Parent = FlightEngineCard AddCorner(masterFlightToggleBtn, 6)
+masterFlightToggleBtn.Parent = FlightEngineCard AddCorner(masterFlightToggleBtn, 6) FUI.AttachSpringAndRipple(masterFlightToggleBtn)
 local keyFlyToggleBtn = Instance.new("TextButton") keyFlyToggleBtn.Size = UDim2.new(0.52, -12, 0, 34)
 keyFlyToggleBtn.Position = UDim2.new(0.5, 4, 0, 10) keyFlyToggleBtn.Font = Enum.Font.GothamBold
 keyFlyToggleBtn.TextSize = 12 keyFlyToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-keyFlyToggleBtn.Parent = FlightEngineCard AddCorner(keyFlyToggleBtn, 6)
+keyFlyToggleBtn.Parent = FlightEngineCard AddCorner(keyFlyToggleBtn, 6) FUI.AttachSpringAndRipple(keyFlyToggleBtn)
 local flyKeyBindLabel = MakeLabel(FlightEngineCard, UDim2.new(0.38, -10, 0, 30), UDim2.new(0, 10, 0, 52), "Shortcut Key:", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
 flyKeyBindLabel.TextTruncate = Enum.TextTruncate.AtEnd
 local flyKeyAssignBtn = MakeButton(FlightEngineCard, UDim2.new(0.36, -6, 0, 30), UDim2.new(0.38, 4, 0, 52), "Bind Key: [E]", "PanelBg", 11)
@@ -3464,10 +3740,15 @@ flyKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 flyKeyDeleteBtn.Font = Enum.Font.GothamBold flyKeyDeleteBtn.TextSize = 11
 flyKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 flyKeyDeleteBtn.Text = E.Trash .. " Delete Key" flyKeyDeleteBtn.Parent = FlightEngineCard
-AddCorner(flyKeyDeleteBtn, 6) masterFlightToggleBtn.BackgroundColor3 = masterFlightEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(231, 76, 60)
-masterFlightToggleBtn.Text = masterFlightEnabled and "Master Flight Switch: ON" or "Master Flight Switch: OFF"
-keyFlyToggleBtn.BackgroundColor3 = keyFlying and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(231, 76, 60)
-keyFlyToggleBtn.Text = keyFlying and "Keybind [E] Flight: ON" or "Keybind [E] Flight: OFF"
+AddCorner(flyKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(flyKeyDeleteBtn)
+local function UpdateFlightUI()
+	FUI.TweenButtonState(masterFlightToggleBtn, masterFlightEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(231, 76, 60), nil, masterFlightEnabled)
+	masterFlightToggleBtn.Text = masterFlightEnabled and "Master Flight Switch: ON" or "Master Flight Switch: OFF"
+	local fk = savedConfig.Settings.FlyKeybind or "E"
+	FUI.TweenButtonState(keyFlyToggleBtn, keyFlying and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(231, 76, 60), nil, keyFlying)
+	keyFlyToggleBtn.Text = keyFlying and ("Keybind [" .. fk .. "] Flight: ON") or ("Keybind [" .. fk .. "] Flight: OFF")
+end
+UpdateFlightUI()
 
 isFlightActive = function()
 	return masterFlightEnabled and keyFlying
@@ -3476,8 +3757,7 @@ end
 stopFlight = function()
 	keyFlying = false
 	freezePosition = nil
-	keyFlyToggleBtn.Text = "Keybind [E] Flight: OFF"
-	keyFlyToggleBtn.BackgroundColor3 = Color3.fromRGB(231, 76, 60)
+	UpdateFlightUI()
 
 	if fakeGroundPart then
 		fakeGroundPart:Destroy()
@@ -3511,8 +3791,7 @@ startFlight = function()
 
 	keyFlying = true
 	freezePosition = root.Position
-	keyFlyToggleBtn.Text = "Keybind [E] Flight: ON"
-	keyFlyToggleBtn.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
+	UpdateFlightUI()
 
 	hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
 	hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
@@ -3544,8 +3823,7 @@ masterFlightToggleBtn.MouseButton1Click:Connect(function()
 	NotifyFeatureToggle("Master Flight Switch", masterFlightEnabled)
 	savedConfig.Settings.MasterFlightEnabled = masterFlightEnabled
 	if syncAllSystems then syncAllSystems() end
-	masterFlightToggleBtn.BackgroundColor3 = masterFlightEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(231, 76, 60)
-	masterFlightToggleBtn.Text = masterFlightEnabled and "Master Flight Switch: ON" or "Master Flight Switch: OFF"
+	UpdateFlightUI()
 	if not masterFlightEnabled then
 		stopFlight()
 	end
@@ -3743,7 +4021,7 @@ freecamToggleBtn.Size = UDim2.new(0.5, -14, 0, 34)
 freecamToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 freecamToggleBtn.Font = Enum.Font.GothamBold freecamToggleBtn.TextSize = 12
 freecamToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-AddCorner(freecamToggleBtn, 6)
+AddCorner(freecamToggleBtn, 6) FUI.AttachSpringAndRipple(freecamToggleBtn)
 local freecamStatusLbl = Instance.new("TextLabel", FreecamCard)
 freecamStatusLbl.Size = UDim2.new(0.5, -14, 0, 34)
 freecamStatusLbl.Position = UDim2.new(0.5, 4, 0, 10)
@@ -3763,7 +4041,7 @@ freecamKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 freecamKeyDeleteBtn.Font = Enum.Font.GothamBold freecamKeyDeleteBtn.TextSize = 11
 freecamKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 freecamKeyDeleteBtn.Text = E.Trash .. " Delete"
-AddCorner(freecamKeyDeleteBtn, 6)
+AddCorner(freecamKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(freecamKeyDeleteBtn)
 CreateSlider(Tab5_Flight, "Freecam Speed", 1, 500, math.clamp(tonumber(Config.FreecamSpeed) or 60, 1, 500), 17, function(val)
 	Config.FreecamSpeed = val savedConfig.Settings.FreecamSpeed = val SaveConfig(false)
 end)
@@ -3774,8 +4052,8 @@ local function RefreshFreecamUI()
 	local k = Config.FreecamKeybind or "None"
 	freecamKeyAssignBtn.Text = "Bind Key: [" .. k .. "]"
 	freecamToggleBtn.Text = "Freecam [" .. k .. "]: " .. (freecamEnabled and "ON" or "OFF")
-	freecamToggleBtn.BackgroundColor3 = freecamEnabled and Color3.fromRGB(38, 168, 92) or Color3.fromRGB(185, 52, 52)
-	freecamStatusLbl.Text = freecamEnabled and "Freecam: ACTIVE (WASD + Mouse)" or "Freecam: INACTIVE"
+	FUI.TweenButtonState(freecamToggleBtn, freecamEnabled and Color3.fromRGB(38, 168, 92) or Color3.fromRGB(185, 52, 52), nil, freecamEnabled)
+	freecamStatusLbl.Text = freecamEnabled and "Freecam: ACTIVE (WASD / Touch)" or "Freecam: INACTIVE"
 end
 isFreecamActive = function() return freecamEnabled end
 GetFreecamAnchorCF = function(defaultCF)
@@ -3870,6 +4148,25 @@ local function startFreecam()
 				moveVec = moveVec - Vector3.new(0, 1, 0)
 			end
 		end
+		if moveVec.Magnitude < 0.01 then
+			local cChar = GetCharacterFromPlayer(player)
+			local cHum = cChar and cChar:FindFirstChildOfClass("Humanoid")
+			if cHum and cHum.MoveDirection and cHum.MoveDirection.Magnitude > 0.01 then
+				local mDir = cHum.MoveDirection
+				local flatLook = Vector3.new(rotCF.LookVector.X, 0, rotCF.LookVector.Z)
+				local flatRight = Vector3.new(rotCF.RightVector.X, 0, rotCF.RightVector.Z)
+				if flatLook.Magnitude > 0.001 and flatRight.Magnitude > 0.001 then
+					flatLook = flatLook.Unit
+					flatRight = flatRight.Unit
+					moveVec = (rotCF.LookVector * mDir:Dot(flatLook)) + (rotCF.RightVector * mDir:Dot(flatRight))
+				else
+					moveVec = mDir
+				end
+			end
+			if cHum and cHum.Jump then
+				moveVec = moveVec + Vector3.new(0, 1, 0)
+			end
+		end
 		local fcSpeed = math.clamp(tonumber(Config.FreecamSpeed) or 60, 1, 500)
 		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then fcSpeed = fcSpeed * 0.35 end
 		if moveVec.Magnitude > 0.001 then
@@ -3883,6 +4180,14 @@ toggleFreecamState = function()
 	if freecamEnabled then stopFreecam() else startFreecam() end
 	NotifyFeatureToggle("Freecam", freecamEnabled)
 end
+table.insert(Connections, UserInputService.TouchMoved:Connect(function(touch, gpe)
+	if not freecamEnabled or isClosingPermanently then return end
+	if touch.Position.X > (workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X * 0.35 or 260) then
+		local delta = touch.Delta
+		freecamYaw = freecamYaw - math.rad(delta.X * 0.32)
+		freecamPitch = math.clamp(freecamPitch - math.rad(delta.Y * 0.32), -math.rad(88), math.rad(88))
+	end
+end))
 if FUI.RegisterSearchFunction then
 		FUI.RegisterSearchFunction({
 			Name = "Flight Active [E] (3D Camera-Aligned Fly)",
@@ -4135,9 +4440,21 @@ if aimbotEnabled and targetAimbotEnabled then targetAimbotEnabled = false Config
 local specificTargetPlayer = nil
 local strongLock = (Config.StrongLock ~= false)
 local aimbotTeamCheck = (Config.AimbotTeamCheck ~= false)
-local autoShootEnabled = (Config.AutoShootEnabled == true)
-local aimbotAutoShootEnabled = (Config.AimbotAutoShootEnabled == true)
-if autoShootEnabled and aimbotAutoShootEnabled then aimbotAutoShootEnabled = false Config.AimbotAutoShootEnabled = false end
+local autoShootMode = (Config.AutoShootMode == "Normal") and "Normal" or "Aimbot"
+local autoShootMasterEnabled = (Config.AutoShootEnabled == true) or (Config.AimbotAutoShootEnabled == true)
+local autoShootEnabled = autoShootMasterEnabled and (autoShootMode == "Normal")
+local aimbotAutoShootEnabled = autoShootMasterEnabled and (autoShootMode == "Aimbot")
+local function SyncAutoShootModeFlags()
+	autoShootEnabled = autoShootMasterEnabled and (autoShootMode == "Normal")
+	aimbotAutoShootEnabled = autoShootMasterEnabled and (autoShootMode == "Aimbot")
+	Config.AutoShootMode = autoShootMode
+	Config.AutoShootEnabled = autoShootEnabled
+	Config.AimbotAutoShootEnabled = aimbotAutoShootEnabled
+	savedConfig.Settings.AutoShootMode = autoShootMode
+	savedConfig.Settings.AutoShootEnabled = autoShootEnabled
+	savedConfig.Settings.AimbotAutoShootEnabled = aimbotAutoShootEnabled
+end
+SyncAutoShootModeFlags()
 local lastAutoShoot = 0
 local isAutoShootingActive = false
 local lastMiddleDotTarget, lastMiddleDotTime = nil, 0
@@ -4275,31 +4592,61 @@ local function SetupTab7()
 		reusableWallcheckParams.FilterDescendantsInstances = reusableWallFilter
 	end
 	updateWallcheckFilter()
-	isTargetVisible = function(targetPart, targetCharacter)
-		if not wallcheckEnabled then return true end
+	isTargetVisible = function(targetPart, targetCharacter, forceWallcheck)
+		if not wallcheckEnabled and not forceWallcheck then return true end
 		local cam = workspace.CurrentCamera
-		if not cam or not targetPart then return false end
-		if reusableWallFilter[1] ~= LocalPlayer.Character or reusableWallFilter[2] ~= cam then
-			updateWallcheckFilter(LocalPlayer.Character)
-		end
+		if not cam or not targetPart or not targetPart.Parent then return false end
+		updateWallcheckFilter(LocalPlayer.Character)
+		local baseFilterCount = #reusableWallFilter
 		local origin = cam.CFrame.Position
 		local tPos = targetPart.Position
-		for _ = 1, 6 do
-			local dir = Vector3.new(tPos.X - origin.X, tPos.Y - origin.Y, tPos.Z - origin.Z)
-			if dir.Magnitude < 0.5 then return true end
+		local dir = Vector3.new(tPos.X - origin.X, tPos.Y - origin.Y, tPos.Z - origin.Z)
+		if dir.Magnitude < 0.5 then return true end
+		local visible = false
+		for _ = 1, 14 do
 			local res = workspace:Raycast(origin, dir, reusableWallcheckParams)
-			if not res or not res.Instance then return true end
+			if not res or not res.Instance then
+				visible = true
+				break
+			end
 			local hit = res.Instance
-			if targetCharacter and hit:IsDescendantOf(targetCharacter) then return true end
+			if targetCharacter and hit:IsDescendantOf(targetCharacter) then
+				visible = true
+				break
+			end
 			local hurtFolder = workspace:FindFirstChild("HurtEffect")
-			if hurtFolder and hit:IsDescendantOf(hurtFolder) then return true end
-			if not hit.CanCollide or hit.Transparency >= 0.85 or hit:FindFirstAncestorOfClass("Accessory") or hit:FindFirstAncestorOfClass("Tool") or (FUI.ZombieAim and FUI.ZombieAim.Enabled and FUI.ZombieAim.IsPartInAnyZombie(hit)) then
-				origin = res.Position + (dir.Unit * 0.2)
+			local isPassThrough = false
+			if hurtFolder and hit:IsDescendantOf(hurtFolder) then
+				isPassThrough = true
+			elseif hit.Transparency >= 0.75 then
+				isPassThrough = true
+			elseif not hit.CanCollide and hit.Transparency >= 0.25 then
+				isPassThrough = true
+			elseif hit:FindFirstAncestorOfClass("Accessory") or hit:FindFirstAncestorOfClass("Tool") then
+				isPassThrough = true
+			elseif FUI.ZombieAim and FUI.ZombieAim.Enabled then
+				local isZ, zMdl = FUI.ZombieAim.IsPartInAnyZombie(hit)
+				if isZ and zMdl and zMdl ~= targetCharacter then
+					table.insert(reusableWallFilter, zMdl)
+					reusableWallcheckParams.FilterDescendantsInstances = reusableWallFilter
+					isPassThrough = true
+				end
+			end
+			if isPassThrough then
+				if reusableWallFilter[#reusableWallFilter] ~= hit then
+					table.insert(reusableWallFilter, hit)
+					reusableWallcheckParams.FilterDescendantsInstances = reusableWallFilter
+				end
 			else
-				return false
+				visible = false
+				break
 			end
 		end
-		return true
+		while #reusableWallFilter > baseFilterCount do
+			reusableWallFilter[#reusableWallFilter] = nil
+		end
+		reusableWallcheckParams.FilterDescendantsInstances = reusableWallFilter
+		return visible
 	end worldToScreenDistance = function(worldPos) local cam = workspace.CurrentCamera
 		if not cam then return nil, false, math.huge end
 		local vp, onScreen = cam:WorldToViewportPoint(worldPos)
@@ -4644,13 +4991,17 @@ local function SetupTab7()
 						local _, onScreen, sDist = worldToScreenDistance(pp)
 						if onScreen and sDist <= bestDist and isTargetVisible(part, char) then
 							bestDist, bestPlr = sDist, plr end end end end end return bestPlr end
-	-- Section 1: Dual Aimbot Engines ([Q] vs [T]) & Dual Auto Shoot Modes ([Z] Normal vs [V] Aimbot-Lock)
-	CreateSectionHeader(Tab7_Visuals, "1. Normal Aimbot [Q] & 2. Target Player Aimbot [T] (Mutually Exclusive)", 1)
+	--==============================================================================
+	-- SECTION 1: AIMBOT ENGINES (1. Normal [Q] | 2. Target Player [T] | 3. Zombie [G])
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "1. Aimbot Engines ([Q] Normal | [T] Target Player | [G] Zombie)", 1)
+
+	-- Card 1: 1. Normal Aimbot [Q] (Button Burst Mode vs Toggle Mode)
 	local AimbotEngineCard = CreateCard(Tab7_Visuals, 170, 2)
 	local aimbotToggleBtn = Instance.new("TextButton", AimbotEngineCard)
 	aimbotToggleBtn.Size = UDim2.new(0.5, -14, 0, 34) aimbotToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 	aimbotToggleBtn.Font = Enum.Font.GothamBold aimbotToggleBtn.TextSize = 12
-	aimbotToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotToggleBtn, 6)
+	aimbotToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotToggleBtn, 6) FUI.AttachSpringAndRipple(aimbotToggleBtn)
 	aimbotStatusLabel = Instance.new("TextLabel", AimbotEngineCard)
 	aimbotStatusLabel.Size = UDim2.new(0.5, -14, 0, 34)
 	aimbotStatusLabel.Position = UDim2.new(0.5, 4, 0, 10) aimbotStatusLabel.BackgroundTransparency = 0.15
@@ -4667,17 +5018,17 @@ local function SetupTab7()
 	aimbotKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 	aimbotKeyDeleteBtn.Font = Enum.Font.GothamBold aimbotKeyDeleteBtn.TextSize = 11
 	aimbotKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	aimbotKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(aimbotKeyDeleteBtn, 6)
+	aimbotKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(aimbotKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(aimbotKeyDeleteBtn)
 	local aimbotBurstModeBtn = Instance.new("TextButton", AimbotEngineCard)
 	aimbotBurstModeBtn.Size = UDim2.new(0.5, -14, 0, 32)
 	aimbotBurstModeBtn.Position = UDim2.new(0, 10, 0, 88)
 	aimbotBurstModeBtn.Font = Enum.Font.GothamBold aimbotBurstModeBtn.TextSize = 11
-	aimbotBurstModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotBurstModeBtn, 6)
+	aimbotBurstModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotBurstModeBtn, 6) FUI.AttachSpringAndRipple(aimbotBurstModeBtn)
 	local aimbotToggleModeBtn = Instance.new("TextButton", AimbotEngineCard)
 	aimbotToggleModeBtn.Size = UDim2.new(0.5, -14, 0, 32)
 	aimbotToggleModeBtn.Position = UDim2.new(0.5, 4, 0, 88)
 	aimbotToggleModeBtn.Font = Enum.Font.GothamBold aimbotToggleModeBtn.TextSize = 11
-	aimbotToggleModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotToggleModeBtn, 6)
+	aimbotToggleModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotToggleModeBtn, 6) FUI.AttachSpringAndRipple(aimbotToggleModeBtn)
 	local aimbotDurLabel = MakeLabel(AimbotEngineCard, UDim2.new(0.5, -14, 0, 32), UDim2.new(0, 10, 0, 126), "Button [Q] On-Time (ms):", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
 	aimbotDurLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	local aimbotDurationBox = Instance.new("TextBox", AimbotEngineCard)
@@ -4692,12 +5043,12 @@ local function SetupTab7()
 	RegisterThemeObject(aimbotDurationBox, "TextColor3", "TextPrimary")
 	AddCorner(aimbotDurationBox, 6)
 
-	-- Card 2: Target Specific Player Aimbot (Locks ONLY onto Selected Player)
+	-- Card 2: 2. Target Specific Player Aimbot [T] (Locks ONLY onto Selected Player)
 	local TargetAimbotCard = CreateCard(Tab7_Visuals, 94, 3)
 	local targetAimbotToggleBtn = Instance.new("TextButton", TargetAimbotCard)
 	targetAimbotToggleBtn.Size = UDim2.new(0.5, -14, 0, 34) targetAimbotToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 	targetAimbotToggleBtn.Font = Enum.Font.GothamBold targetAimbotToggleBtn.TextSize = 12
-	targetAimbotToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(targetAimbotToggleBtn, 6)
+	targetAimbotToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(targetAimbotToggleBtn, 6) FUI.AttachSpringAndRipple(targetAimbotToggleBtn)
 	local targetSelectBtn = MakeButton(TargetAimbotCard, UDim2.new(0.5, -14, 0, 34), UDim2.new(0.5, 4, 0, 10), "Target: None [Select]", "AccentDark", 11)
 	local tAimKeyLabel = MakeLabel(TargetAimbotCard, UDim2.new(0.38, -10, 0, 30), UDim2.new(0, 10, 0, 52), "Target Aim Key:", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
 	tAimKeyLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -4708,7 +5059,7 @@ local function SetupTab7()
 	targetAimKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 	targetAimKeyDeleteBtn.Font = Enum.Font.GothamBold targetAimKeyDeleteBtn.TextSize = 11
 	targetAimKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	targetAimKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(targetAimKeyDeleteBtn, 6)
+	targetAimKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(targetAimKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(targetAimKeyDeleteBtn)
 
 	local targetListFrame = Instance.new("Frame", TargetAimbotCard)
 	targetListFrame.Size = UDim2.new(1, -20, 0, 146)
@@ -4729,7 +5080,7 @@ local function SetupTab7()
 	Instance.new("UIListLayout", targetScrollList).Padding = UDim.new(0, 5)
 
 	--==============================================================================
-	-- ZERO-LAG ZOMBIE & GARGOYLE TOWER AIMBOT ENGINE (Pre-Cached Parts + 0.45ms Budgeted Scanner)
+	-- ZERO-LAG ZOMBIE & GARGOYLE TOWER AIMBOT ENGINE (Strict Spawn/Visibility + Anti-Loot Filter)
 	--==============================================================================
 	FUI.ZombieAim = {
 		Enabled = (Config.ZombieAimbotEnabled == true),
@@ -4746,7 +5097,39 @@ local function SetupTab7()
 	local Z_KEYWORDS = {
 		"zombie", "gargoyle", "monster", "mob", "enemy", "enemies", "undead", "infected",
 		"walker", "runner", "brute", "boss", "skeleton", "ghoul", "npc", "bot", "creep",
-		"horde", "dummy", "target", "fiend", "minion", "mutant"
+		"horde", "dummy", "fiend", "minion", "mutant"
+	}
+	local Z_IGNORE_KEYWORDS = {
+		"health", "medkit", "med_kit", "medpack", "heal", "revive", "defib", "bandage",
+		"firstaid", "first_aid", "aidkit", "stim", "syringe", "pill", "armor", "shield", "vest",
+		"ammo", "ammunition", "mag", "clip", "bullet", "shell", "reload", "crate", "box",
+		"chest", "supply", "cache", "container", "pack", "drop", "loot", "pickup", "powerup",
+		"perk", "item", "weapon", "gun", "rifle", "pistol", "revolver", "shotgun", "smg",
+		"lmg", "sniper", "launcher", "rpg", "minigun", "raygun", "turret", "sentry", "drone",
+		"sword", "katana", "knife", "dagger", "blade", "axe", "hammer", "bat", "club",
+		"grenade", "molotov", "bomb", "mine", "claymore", "c4", "tnt", "dynamite", "nuke",
+		"barricade", "barrier", "board", "plank", "door", "gate", "window", "wall", "floor",
+		"roof", "ceiling", "stairs", "ladder", "mystery", "vending", "machine", "soda",
+		"shop", "store", "vendor", "merchant", "trader", "buy", "upgrade", "station", "bench",
+		"table", "locker", "cabinet", "shelf", "rack", "safe", "vault", "coin", "cash", "money",
+		"gold", "gem", "diamond", "token", "point", "xp", "orb", "crystal", "shard", "key",
+		"card", "badge", "trophy", "flag", "objective", "generator", "battery", "power",
+		"switch", "lever", "button", "valve", "terminal", "console", "computer", "radio",
+		"beacon", "flare", "campfire", "lantern", "light", "lamp", "torch", "barrel", "drum",
+		"canister", "tank", "propane", "fuel", "corpse", "dead", "ragdoll", "gib", "blood",
+		"gore", "debris", "rubble", "trash", "rock", "tree", "bush", "car", "truck", "van",
+		"vehicle", "chair", "bed", "desk", "sign", "fx", "vfx", "effect", "particle", "trail",
+		"beam", "laser", "projectile", "missile", "rocket", "arrow", "trap", "spike", "spawner",
+		"spawnpoint", "portal", "teleporter", "waypoint", "node", "path", "zone", "region",
+		"trigger", "pool", "template", "prefab", "storage", "cutscene", "lobby", "preview",
+		"viewmodel", "camera", "arms", "kit"
+	}
+	local Z_FOLDER_IGNORE_KEYWORDS = {
+		"drop", "loot", "item", "crate", "ammo", "weapon", "pickup", "powerup", "perk",
+		"prop", "map", "decor", "building", "structure", "environment", "effect", "fx", "vfx",
+		"dead", "corpse", "ragdoll", "pool", "template", "prefab", "storage", "spawner",
+		"spawnpoint", "lobby", "cutscene", "shop", "store", "ignore", "debris", "Gibs",
+		"projectiles", "bullets", "turrets", "traps", "barricades", "doors", "lights"
 	}
 	local function HasZombieKeyword(str)
 		if type(str) ~= "string" or str == "" then return false end
@@ -4754,6 +5137,56 @@ local function SetupTab7()
 		for i = 1, #Z_KEYWORDS do
 			if string.find(low, Z_KEYWORDS[i], 1, true) then
 				return true
+			end
+		end
+		return false
+	end
+	local function HasIgnoredLootKeyword(str)
+		if type(str) ~= "string" or str == "" then return false end
+		local low = string.lower(str)
+		for i = 1, #Z_IGNORE_KEYWORDS do
+			if string.find(low, Z_IGNORE_KEYWORDS[i], 1, true) then
+				return true
+			end
+		end
+		return false
+	end
+	local function HasIgnoredFolderKeyword(str)
+		if type(str) ~= "string" or str == "" then return false end
+		local low = string.lower(str)
+		for i = 1, #Z_FOLDER_IGNORE_KEYWORDS do
+			if string.find(low, Z_FOLDER_IGNORE_KEYWORDS[i], 1, true) then
+				return true
+			end
+		end
+		return false
+	end
+	local function IsLootOrInvalidAncestor(mdl)
+		if not mdl or not mdl.Parent then return true end
+		if HasIgnoredLootKeyword(mdl.Name) then return true end
+		if mdl:IsA("Tool") or mdl:IsA("Accessory") then return true end
+		local cur = mdl.Parent
+		local depth = 0
+		while cur and cur ~= workspace and depth < 8 do
+			if cur:IsA("Tool") or cur:IsA("Accessory") then return true end
+			if HasIgnoredFolderKeyword(cur.Name) or HasIgnoredLootKeyword(cur.Name) then
+				return true
+			end
+			cur = cur.Parent
+			depth = depth + 1
+		end
+		return (cur ~= workspace)
+	end
+	local function HasVisibleZombieBodyMesh(mdl, head, body)
+		if head and head.Parent and head.Transparency < 0.65 then return true end
+		if body and body.Parent and body.Name ~= "HumanoidRootPart" and body.Transparency < 0.65 then return true end
+		local children = mdl:GetChildren()
+		for i = 1, #children do
+			local ch = children[i]
+			if ch:IsA("BasePart") and ch.Name ~= "HumanoidRootPart" and ch.Name ~= "Hitbox" and ch.Name ~= "HeadHitbox" then
+				if ch.Transparency < 0.65 and ch.Size.Magnitude >= 0.4 then
+					return true
+				end
 			end
 		end
 		return false
@@ -4779,16 +5212,31 @@ local function SetupTab7()
 		if not entry then return false end
 		local mdl = entry.Model
 		local head = entry.Head
-		if not mdl or not mdl.Parent or not head or not head.Parent then return false end
-		if head.Transparency >= 0.98 then return false end
-		local hum = entry.Hum
+		local body = entry.Body
+		if not mdl or not mdl.Parent or not head or not head.Parent or not body or not body.Parent then return false end
+		if not mdl:IsDescendantOf(workspace) then return false end
+		if mdl:FindFirstChildOfClass("ForceField") ~= nil then return false end
+		if not HasVisibleZombieBodyMesh(mdl, head, body) then return false end
+		local hum = entry.Hum or mdl:FindFirstChildOfClass("Humanoid")
 		if hum then
-			if not hum.Parent or hum.Health <= 0 then return false end
+			entry.Hum = hum
+			if not hum.Parent or hum.Health <= 0 or hum.MaxHealth <= 0 then return false end
+			local hState = hum:GetState()
+			if hState == Enum.HumanoidStateType.Dead or hState == Enum.HumanoidStateType.Physics then return false end
 		end
-		local hpAttr = mdl:GetAttribute("Health")
+		local hpAttr = mdl:GetAttribute("Health") or mdl:GetAttribute("HP") or mdl:GetAttribute("CurrentHealth")
 		if type(hpAttr) == "number" and hpAttr <= 0 then return false end
-		if mdl:GetAttribute("Dead") == true or mdl:GetAttribute("IsDead") == true then return false end
-		if head.Position.Y < -450 then return false end
+		local hpValObj = mdl:FindFirstChild("Health") or mdl:FindFirstChild("HP")
+		if hpValObj and (hpValObj:IsA("NumberValue") or hpValObj:IsA("IntValue")) and hpValObj.Value <= 0 then return false end
+		if mdl:GetAttribute("Dead") == true or mdl:GetAttribute("IsDead") == true or mdl:GetAttribute("Downed") == true or mdl:GetAttribute("Ragdoll") == true or mdl:GetAttribute("Ragdolled") == true or mdl:GetAttribute("InPool") == true or mdl:GetAttribute("Spawning") == true or mdl:GetAttribute("IsSpawning") == true then
+			return false
+		end
+		if mdl:GetAttribute("Spawned") == false or mdl:GetAttribute("IsSpawned") == false or mdl:GetAttribute("Active") == false or mdl:GetAttribute("Visible") == false then
+			return false
+		end
+		local hPos = head.Position
+		if hPos.Y < -250 or hPos.Y > 4000 then return false end
+		if math.abs(hPos.X) < 0.05 and math.abs(hPos.Z) < 0.05 then return false end
 		return true
 	end
 
@@ -4806,57 +5254,58 @@ local function SetupTab7()
 			if pc and (mdl == pc or mdl:IsDescendantOf(pc)) then return false end
 		end
 
-		local head = mdl:FindFirstChild("Head") or mdl:FindFirstChild("HeadHitbox") or mdl:FindFirstChild("Hitbox")
-		local body = mdl:FindFirstChild("HumanoidRootPart") or mdl:FindFirstChild("Torso") or mdl:FindFirstChild("UpperTorso") or mdl:FindFirstChild("LowerTorso") or mdl:FindFirstChild("Body") or mdl.PrimaryPart
+		-- 1. Reject all dropped loot, health kits, revives, ammo boxes, weapon crates, and map props
+		if IsLootOrInvalidAncestor(mdl) then return false end
+		if mdl:FindFirstChildOfClass("ForceField") ~= nil then return false end
+		if mdl:FindFirstChildWhichIsA("ProximityPrompt", true) ~= nil or mdl:FindFirstChildWhichIsA("ClickDetector", true) ~= nil then
+			return false
+		end
+
+		-- 2. Require genuine character/enemy anatomy (must have distinct Head and Body/Torso/Root)
+		local head = mdl:FindFirstChild("Head") or mdl:FindFirstChild("HeadHitbox") or mdl:FindFirstChild("FakeHead")
+		local body = mdl:FindFirstChild("HumanoidRootPart") or mdl:FindFirstChild("Torso") or mdl:FindFirstChild("UpperTorso") or mdl:FindFirstChild("LowerTorso") or mdl:FindFirstChild("Body") or mdl:FindFirstChild("RootPart")
+		if not head or not head:IsA("BasePart") or not body or not body:IsA("BasePart") or head == body then
+			return false
+		end
+		if head.Size.X > 16 or head.Size.Y > 16 or head.Size.Z > 16 or head.Size.Magnitude < 0.25 then
+			return false
+		end
+
 		local hum = mdl:FindFirstChildOfClass("Humanoid")
 		local anim = mdl:FindFirstChildOfClass("AnimationController") or mdl:FindFirstChildOfClass("Animator")
+		if hum then
+			if hum.Health <= 0 or hum.MaxHealth <= 0 then return false end
+			local hState = hum:GetState()
+			if hState == Enum.HumanoidStateType.Dead or hState == Enum.HumanoidStateType.Physics then return false end
+		end
 
-		if hum and hum.Health <= 0 then return false end
-		local hpAttr = mdl:GetAttribute("Health")
+		local hpAttr = mdl:GetAttribute("Health") or mdl:GetAttribute("HP") or mdl:GetAttribute("CurrentHealth")
 		if type(hpAttr) == "number" and hpAttr <= 0 then return false end
-		if mdl:GetAttribute("Dead") == true or mdl:GetAttribute("IsDead") == true then return false end
+		local hpValObj = mdl:FindFirstChild("Health") or mdl:FindFirstChild("HP")
+		if hpValObj and (hpValObj:IsA("NumberValue") or hpValObj:IsA("IntValue")) and hpValObj.Value <= 0 then return false end
+		if mdl:GetAttribute("Dead") == true or mdl:GetAttribute("IsDead") == true or mdl:GetAttribute("Downed") == true or mdl:GetAttribute("Ragdoll") == true or mdl:GetAttribute("Ragdolled") == true or mdl:GetAttribute("InPool") == true or mdl:GetAttribute("Spawning") == true or mdl:GetAttribute("IsSpawning") == true then
+			return false
+		end
+		if mdl:GetAttribute("Spawned") == false or mdl:GetAttribute("IsSpawned") == false or mdl:GetAttribute("Active") == false or mdl:GetAttribute("Visible") == false then
+			return false
+		end
+
+		-- 3. Must be visibly rendered in workspace (not invisible/unspawned ghost template)
+		if not HasVisibleZombieBodyMesh(mdl, head, body) then return false end
 
 		local p1 = mdl.Parent
 		local p2 = p1 and p1.Parent
 		local p3 = p2 and p2.Parent
 		local hasKeyword = HasZombieKeyword(mdl.Name) or (p1 and HasZombieKeyword(p1.Name)) or (p2 and HasZombieKeyword(p2.Name)) or (p3 and HasZombieKeyword(p3.Name))
-
-		local limbCount, hasGreenLimb = 0, false
-		if not head or not head:IsA("BasePart") or not body or not body:IsA("BasePart") then
-			local highestY = -math.huge
-			for _, ch in ipairs(mdl:GetChildren()) do
-				if ch:IsA("BasePart") and ch.Transparency < 0.98 and ch.Size.X <= 16 and ch.Size.Y <= 16 and ch.Size.Z <= 16 then
-					limbCount = limbCount + 1
-					local col = ch.Color
-					if col.G > 0.42 and col.G > col.R * 1.2 and col.G > col.B * 1.2 then
-						hasGreenLimb = true
-					end
-					if not body then body = ch end
-					if ch.Position.Y > highestY then
-						highestY = ch.Position.Y
-						head = ch
-					end
-				end
-			end
-		end
-
-		local validHead = (head and head:IsA("BasePart") and head) or (body and body:IsA("BasePart") and body)
-		local validBody = (body and body:IsA("BasePart") and body) or validHead
-		if not validHead then return false end
-		if validHead.Size.X > 22 or validHead.Size.Y > 22 or validHead.Size.Z > 22 then return false end
-		if validHead.Transparency >= 0.98 then return false end
-
-		local hasRigAnatomy = (head ~= nil and body ~= nil and head ~= body and (
+		local hasLimbs = (
 			mdl:FindFirstChild("Left Arm") ~= nil or mdl:FindFirstChild("Right Arm") ~= nil or
 			mdl:FindFirstChild("LeftUpperArm") ~= nil or mdl:FindFirstChild("RightUpperArm") ~= nil or
-			validHead:FindFirstChildOfClass("Decal") ~= nil or validHead:FindFirstChildOfClass("SpecialMesh") ~= nil or
-			validBody:FindFirstChildOfClass("Motor6D") ~= nil or validHead:FindFirstChildOfClass("Motor6D") ~= nil or
-			not validHead.Anchored or not validBody.Anchored
-		))
-		local hasHealthVal = (hpAttr ~= nil or mdl:GetAttribute("MaxHealth") ~= nil or mdl:FindFirstChild("Health") ~= nil)
-
-		local hasZombieColorRig = (hasGreenLimb and limbCount >= 3 and limbCount <= 20)
-		if not (hum or anim or hasKeyword or hasRigAnatomy or hasHealthVal or hasZombieColorRig) then
+			mdl:FindFirstChild("Left Leg") ~= nil or mdl:FindFirstChild("Right Leg") ~= nil or
+			mdl:FindFirstChild("LeftUpperLeg") ~= nil or mdl:FindFirstChild("RightUpperLeg") ~= nil or
+			body:FindFirstChildOfClass("Motor6D") ~= nil or head:FindFirstChildOfClass("Motor6D") ~= nil or
+			body:FindFirstChildOfClass("Bone") ~= nil
+		)
+		if not (hum or (anim and (hasKeyword or hasLimbs)) or (hasKeyword and hasLimbs)) then
 			return false
 		end
 
@@ -4867,11 +5316,12 @@ local function SetupTab7()
 
 		local entry = {
 			Model = mdl,
-			Head = validHead,
-			Body = validBody,
+			Head = head,
+			Body = body,
 			Hum = hum,
 			Name = dispName
 		}
+		if not FUI.ZombieAim.IsEntryAlive(entry) then return false end
 		FUI.ZombieAim.CacheMap[mdl] = entry
 		FUI.ZombieAim.CacheList[#FUI.ZombieAim.CacheList + 1] = entry
 		return true
@@ -4920,14 +5370,14 @@ local function SetupTab7()
 							local ch = children[i]
 							if ch ~= cam and ch ~= myChar and ch.Name ~= "Terrain" and ch.Name ~= "LocalWearer_LocalTryOn" and ch.Name ~= "TR_FakeFloor" then
 								if ch:IsA("Model") then
-									if Players:GetPlayerFromCharacter(ch) == nil then
+									if Players:GetPlayerFromCharacter(ch) == nil and not HasIgnoredLootKeyword(ch.Name) then
 										local isZ = FUI.ZombieAim.TryRegisterModel(ch)
-										if not isZ and d < 9 then
+										if not isZ and d < 8 and not HasIgnoredFolderKeyword(ch.Name) then
 											stack[#stack + 1] = ch
 											depthMap[ch] = d + 1
 										end
 									end
-								elseif ch:IsA("Folder") and d < 10 then
+								elseif ch:IsA("Folder") and d < 9 and not HasIgnoredFolderKeyword(ch.Name) then
 									stack[#stack + 1] = ch
 									depthMap[ch] = d + 1
 								end
@@ -4957,7 +5407,7 @@ local function SetupTab7()
 					elseif inst:IsA("Humanoid") or inst:IsA("AnimationController") then
 						local p = inst.Parent
 						if p and p:IsA("Model") then FUI.ZombieAim.QueueModel(p) end
-					elseif inst:IsA("BasePart") and (inst.Name == "Head" or inst.Name == "Torso" or inst.Name == "UpperTorso" or inst.Name == "HumanoidRootPart" or inst.Name == "Hitbox") then
+					elseif inst:IsA("BasePart") and (inst.Name == "Head" or inst.Name == "Torso" or inst.Name == "UpperTorso" or inst.Name == "HumanoidRootPart") then
 						local p = inst.Parent
 						if p and p:IsA("Model") then FUI.ZombieAim.QueueModel(p) end
 					end
@@ -4987,9 +5437,7 @@ local function SetupTab7()
 		local useDistPrio = (FUI.ZombieAim.Priority == "Distance")
 		local wantHead = (aimPartName == "Head")
 
-		local b1Entry, b1Part, b1Score = nil, nil, math.huge
-		local b2Entry, b2Part, b2Score = nil, nil, math.huge
-		local b3Entry, b3Part, b3Score = nil, nil, math.huge
+		local bestEntry, bestPart, bestScore = nil, nil, math.huge
 
 		for i = #list, 1, -1 do
 			local entry = list[i]
@@ -5013,15 +5461,11 @@ local function SetupTab7()
 							else
 								score = sDist + (math.sqrt(cDistSq) * 0.08)
 							end
-							if score < b1Score then
-								b3Entry, b3Part, b3Score = b2Entry, b2Part, b2Score
-								b2Entry, b2Part, b2Score = b1Entry, b1Part, b1Score
-								b1Entry, b1Part, b1Score = entry, part, score
-							elseif score < b2Score then
-								b3Entry, b3Part, b3Score = b2Entry, b2Part, b2Score
-								b2Entry, b2Part, b2Score = entry, part, score
-							elseif score < b3Score then
-								b3Entry, b3Part, b3Score = entry, part, score
+							if score < bestScore then
+								-- Always enforce strict line-of-sight visibility for zombies
+								if isTargetVisible(part, entry.Model, true) or (entry.Head and entry.Head ~= part and isTargetVisible(entry.Head, entry.Model, true)) then
+									bestEntry, bestPart, bestScore = entry, part, score
+								end
 							end
 						end
 					end
@@ -5029,27 +5473,21 @@ local function SetupTab7()
 			end
 		end
 
-		if b1Entry and isTargetVisible(b1Part, b1Entry.Model) then
-			return b1Entry.Model, b1Entry, b1Score
-		end
-		if b2Entry and isTargetVisible(b2Part, b2Entry.Model) then
-			return b2Entry.Model, b2Entry, b2Score
-		end
-		if b3Entry and isTargetVisible(b3Part, b3Entry.Model) then
-			return b3Entry.Model, b3Entry, b3Score
+		if bestEntry then
+			return bestEntry.Model, bestEntry, bestScore
 		end
 		return nil, nil, math.huge
 	end
 
-	-- Card 2.5: 3. Zombie & Gargoyle Tower Aimbot [G] (Zero-Lag Horde Aimlock)
-	local ZombieAimbotCard = CreateCard(Tab7_Visuals, 132, 3)
+	-- Card 3: 3. Zombie & Gargoyle Tower Aimbot [G] (Zero-Lag Horde Aimlock)
+	local ZombieAimbotCard = CreateCard(Tab7_Visuals, 132, 4)
 	local zombieAimToggleBtn = Instance.new("TextButton", ZombieAimbotCard)
 	zombieAimToggleBtn.Size = UDim2.new(0.5, -14, 0, 34)
 	zombieAimToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 	zombieAimToggleBtn.Font = Enum.Font.GothamBold
 	zombieAimToggleBtn.TextSize = 12
 	zombieAimToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	AddCorner(zombieAimToggleBtn, 6)
+	AddCorner(zombieAimToggleBtn, 6) FUI.AttachSpringAndRipple(zombieAimToggleBtn)
 
 	local zombieAimStatusLbl = Instance.new("TextLabel", ZombieAimbotCard)
 	zombieAimStatusLbl.Size = UDim2.new(0.5, -14, 0, 34)
@@ -5057,6 +5495,7 @@ local function SetupTab7()
 	zombieAimStatusLbl.BackgroundTransparency = 0.15
 	zombieAimStatusLbl.Font = Enum.Font.GothamSemibold
 	zombieAimStatusLbl.TextSize = 11
+	zombieAimStatusLbl.TextTruncate = Enum.TextTruncate.AtEnd
 	zombieAimStatusLbl.Text = "Zombie Aim: Idle"
 	RegisterThemeObject(zombieAimStatusLbl, "BackgroundColor3", "PanelBg")
 	RegisterThemeObject(zombieAimStatusLbl, "TextColor3", "TextPrimary")
@@ -5074,7 +5513,7 @@ local function SetupTab7()
 	zombieAimKeyDeleteBtn.TextSize = 11
 	zombieAimKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	zombieAimKeyDeleteBtn.Text = E.Trash .. " Delete"
-	AddCorner(zombieAimKeyDeleteBtn, 6)
+	AddCorner(zombieAimKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(zombieAimKeyDeleteBtn)
 
 	local zombieCrosshairPrioBtn = Instance.new("TextButton", ZombieAimbotCard)
 	zombieCrosshairPrioBtn.Size = UDim2.new(0.5, -14, 0, 32)
@@ -5082,7 +5521,7 @@ local function SetupTab7()
 	zombieCrosshairPrioBtn.Font = Enum.Font.GothamBold
 	zombieCrosshairPrioBtn.TextSize = 11
 	zombieCrosshairPrioBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	AddCorner(zombieCrosshairPrioBtn, 6)
+	AddCorner(zombieCrosshairPrioBtn, 6) FUI.AttachSpringAndRipple(zombieCrosshairPrioBtn)
 
 	local zombieDistancePrioBtn = Instance.new("TextButton", ZombieAimbotCard)
 	zombieDistancePrioBtn.Size = UDim2.new(0.5, -14, 0, 32)
@@ -5090,87 +5529,69 @@ local function SetupTab7()
 	zombieDistancePrioBtn.Font = Enum.Font.GothamBold
 	zombieDistancePrioBtn.TextSize = 11
 	zombieDistancePrioBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	AddCorner(zombieDistancePrioBtn, 6)
+	AddCorner(zombieDistancePrioBtn, 6) FUI.AttachSpringAndRipple(zombieDistancePrioBtn)
 
-	-- Card 3: Mode 1 - Normal Auto Shoot [Z] (Works Anytime Screen Middle Dot is on a Player)
-	local AutoShootCard = CreateCard(Tab7_Visuals, 94, 4)
+	--==============================================================================
+	-- SECTION 2: UNIFIED AUTO-SHOOT / TRIGGERBOT [Z] (2 MODES IN ONE ENGINE)
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "2. Unified Auto-Shoot / Triggerbot (1. Aimbot Lock | 2. Normal Crosshair)", 5)
+
+	local AutoShootCard = CreateCard(Tab7_Visuals, 132, 6)
 	local autoShootToggleBtn = Instance.new("TextButton", AutoShootCard)
 	autoShootToggleBtn.Size = UDim2.new(0.5, -14, 0, 34) autoShootToggleBtn.Position = UDim2.new(0, 10, 0, 10)
 	autoShootToggleBtn.Font = Enum.Font.GothamBold autoShootToggleBtn.TextSize = 12
-	autoShootToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(autoShootToggleBtn, 6)
+	autoShootToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(autoShootToggleBtn, 6) FUI.AttachSpringAndRipple(autoShootToggleBtn)
+
 	autoShootStatusLbl = Instance.new("TextLabel", AutoShootCard)
 	autoShootStatusLbl.Size = UDim2.new(0.5, -14, 0, 34)
 	autoShootStatusLbl.Position = UDim2.new(0.5, 4, 0, 10) autoShootStatusLbl.BackgroundTransparency = 0.15
 	autoShootStatusLbl.Font = Enum.Font.GothamSemibold autoShootStatusLbl.TextSize = 11
-	autoShootStatusLbl.Text = "Normal Shoot: OFF"
+	autoShootStatusLbl.TextTruncate = Enum.TextTruncate.AtEnd
+	autoShootStatusLbl.Text = "Auto Shoot: OFF"
 	RegisterThemeObject(autoShootStatusLbl, "BackgroundColor3", "PanelBg")
 	RegisterThemeObject(autoShootStatusLbl, "TextColor3", "TextPrimary") AddCorner(autoShootStatusLbl, 6)
-	local asKeyLabel = MakeLabel(AutoShootCard, UDim2.new(0.38, -10, 0, 30), UDim2.new(0, 10, 0, 52), "Normal Shoot Key:", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
+	aimbotAutoShootStatusLbl = autoShootStatusLbl
+
+	local asKeyLabel = MakeLabel(AutoShootCard, UDim2.new(0.38, -10, 0, 30), UDim2.new(0, 10, 0, 50), "Auto Shoot Key:", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
 	asKeyLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	local autoShootKeyAssignBtn = MakeButton(AutoShootCard, UDim2.new(0.36, -6, 0, 30), UDim2.new(0.38, 4, 0, 52), "Bind Key: [Z]", "PanelBg", 11)
+	local autoShootKeyAssignBtn = MakeButton(AutoShootCard, UDim2.new(0.36, -6, 0, 30), UDim2.new(0.38, 4, 0, 50), "Bind Key: [Z]", "PanelBg", 11)
 	local autoShootKeyDeleteBtn = Instance.new("TextButton", AutoShootCard)
 	autoShootKeyDeleteBtn.Size = UDim2.new(0.26, -14, 0, 30)
-	autoShootKeyDeleteBtn.Position = UDim2.new(0.74, 4, 0, 52)
+	autoShootKeyDeleteBtn.Position = UDim2.new(0.74, 4, 0, 50)
 	autoShootKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
 	autoShootKeyDeleteBtn.Font = Enum.Font.GothamBold autoShootKeyDeleteBtn.TextSize = 11
 	autoShootKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	autoShootKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(autoShootKeyDeleteBtn, 6)
+	autoShootKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(autoShootKeyDeleteBtn, 6) FUI.AttachSpringAndRipple(autoShootKeyDeleteBtn)
 
-	-- Card 4: Mode 2 - Aimbot-Lock Auto Shoot [V] (Fires ONLY When Aimbot [Q]/[T] is ON & Locked onto a Player)
-	local AimbotAutoShootCard = CreateCard(Tab7_Visuals, 94, 5)
-	local aimbotAutoShootToggleBtn = Instance.new("TextButton", AimbotAutoShootCard)
-	aimbotAutoShootToggleBtn.Size = UDim2.new(0.5, -14, 0, 34) aimbotAutoShootToggleBtn.Position = UDim2.new(0, 10, 0, 10)
-	aimbotAutoShootToggleBtn.Font = Enum.Font.GothamBold aimbotAutoShootToggleBtn.TextSize = 12
-	aimbotAutoShootToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(aimbotAutoShootToggleBtn, 6)
-	aimbotAutoShootStatusLbl = Instance.new("TextLabel", AimbotAutoShootCard)
-	aimbotAutoShootStatusLbl.Size = UDim2.new(0.5, -14, 0, 34)
-	aimbotAutoShootStatusLbl.Position = UDim2.new(0.5, 4, 0, 10) aimbotAutoShootStatusLbl.BackgroundTransparency = 0.15
-	aimbotAutoShootStatusLbl.Font = Enum.Font.GothamSemibold aimbotAutoShootStatusLbl.TextSize = 11
-	aimbotAutoShootStatusLbl.Text = "Aimbot Shoot: OFF"
-	RegisterThemeObject(aimbotAutoShootStatusLbl, "BackgroundColor3", "PanelBg")
-	RegisterThemeObject(aimbotAutoShootStatusLbl, "TextColor3", "TextPrimary") AddCorner(aimbotAutoShootStatusLbl, 6)
-	local aasKeyLabel = MakeLabel(AimbotAutoShootCard, UDim2.new(0.38, -10, 0, 30), UDim2.new(0, 10, 0, 52), "Aimbot Shoot Key:", Enum.Font.GothamSemibold, 12, "TextPrimary", Enum.TextXAlignment.Left)
-	aasKeyLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	local aimbotAutoShootKeyAssignBtn = MakeButton(AimbotAutoShootCard, UDim2.new(0.36, -6, 0, 30), UDim2.new(0.38, 4, 0, 52), "Bind Key: [V]", "PanelBg", 11)
-	local aimbotAutoShootKeyDeleteBtn = Instance.new("TextButton", AimbotAutoShootCard)
-	aimbotAutoShootKeyDeleteBtn.Size = UDim2.new(0.26, -14, 0, 30)
-	aimbotAutoShootKeyDeleteBtn.Position = UDim2.new(0.74, 4, 0, 52)
-	aimbotAutoShootKeyDeleteBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55)
-	aimbotAutoShootKeyDeleteBtn.Font = Enum.Font.GothamBold aimbotAutoShootKeyDeleteBtn.TextSize = 11
-	aimbotAutoShootKeyDeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	aimbotAutoShootKeyDeleteBtn.Text = E.Trash .. " Delete" AddCorner(aimbotAutoShootKeyDeleteBtn, 6)
+	-- Mode 1 (First Mode): Aimbot Auto-Shoot | Mode 2 (Second Mode): Normal Crosshair Auto-Shoot
+	local autoShootAimbotModeBtn = Instance.new("TextButton", AutoShootCard)
+	autoShootAimbotModeBtn.Size = UDim2.new(0.5, -14, 0, 32)
+	autoShootAimbotModeBtn.Position = UDim2.new(0, 10, 0, 88)
+	autoShootAimbotModeBtn.Font = Enum.Font.GothamBold autoShootAimbotModeBtn.TextSize = 11
+	autoShootAimbotModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(autoShootAimbotModeBtn, 6) FUI.AttachSpringAndRipple(autoShootAimbotModeBtn)
+
+	local autoShootNormalModeBtn = Instance.new("TextButton", AutoShootCard)
+	autoShootNormalModeBtn.Size = UDim2.new(0.5, -14, 0, 32)
+	autoShootNormalModeBtn.Position = UDim2.new(0.5, 4, 0, 88)
+	autoShootNormalModeBtn.Font = Enum.Font.GothamBold autoShootNormalModeBtn.TextSize = 11
+	autoShootNormalModeBtn.TextColor3 = Color3.fromRGB(255, 255, 255) AddCorner(autoShootNormalModeBtn, 6) FUI.AttachSpringAndRipple(autoShootNormalModeBtn)
 
 	-- Slider for Triggerbot Fire Rate & Burst Delay (1ms to 100ms)
-	CreateSlider(Tab7_Visuals, "Triggerbot Fire Rate / Burst Delay (ms)", 1, 100, math.clamp(tonumber(Config.AutoShootDelayMs) or 25, 1, 100), 6, function(val)
+	CreateSlider(Tab7_Visuals, "Triggerbot Fire Rate / Burst Delay (ms)", 1, 100, math.clamp(tonumber(Config.AutoShootDelayMs) or 25, 1, 100), 7, function(val)
 		Config.AutoShootDelayMs = val
 		savedConfig.Settings.AutoShootDelayMs = val
 		SaveConfig(false)
 	end)
 
-	CreateToggle(Tab7_Visuals, "Aggressive Strong Lock Mode (Instant Snap + Velocity Lead)", strongLock, 7, function(state)
-		strongLock = state Config.StrongLock = state if not strongLock then currentTarget = nil end
-		SaveConfig(false) end)
-	CreateToggle(Tab7_Visuals, "Raycast Wallcheck (Stop Aim & Auto-Shoot Behind Walls)", wallcheckEnabled, 8, function(state)
-		wallcheckEnabled = state Config.WallcheckEnabled = state SaveConfig(false) end)
-	CreateToggle(Tab7_Visuals, "Enemy Katana Auto-Alert & Deflect Blocker (Notify + Stop Shoot)", Config.AntiKatanaEnabled ~= false, 8, function(state)
-		Config.AntiKatanaEnabled = state savedConfig.Settings.AntiKatanaEnabled = state
-		if not state then SetKatanaClickBlockState(false) if KatanaWarnBanner then KatanaWarnBanner.Visible = false end end
-		SaveConfig(false) end)
-	CreateToggle(Tab7_Visuals, "Only Aim at Enemies (Ignore Teammates in Normal Aimbot)", aimbotTeamCheck, 9, function(state)
-		aimbotTeamCheck = state Config.AimbotTeamCheck = state
-		if state and currentTarget and IsTeammate(currentTarget) then currentTarget = nil end SaveConfig(false)
-	end)
-	CreateToggle(Tab7_Visuals, "Show Aimbot FOV Circle (Turn OFF for Full-Screen Aimbot)", fovCircleEnabled, 10, function(state)
-		fovCircleEnabled = state Config.AimbotFOVCircleEnabled = state currentTarget = nil
-		SyncAimbotFovCircleVisibility() SaveConfig(false) end)
-	-- Neat V95 CreateSlider for Aimbot FOV Circle Radius
-	local FovSliderObj local fovBox
-	FovSliderObj = CreateSlider(Tab7_Visuals, "Aimbot FOV Circle Radius (px)", 20, 800, FOV_RADIUS, 11, function(val)
-		FOV_RADIUS = val Config.AimbotFOVRadius = val if fovBox then fovBox.Text = tostring(val) end
-		SyncAimbotFovCircleVisibility() SaveConfig(false) end)
+	--==============================================================================
+	-- SECTION 3: AIMBOT TARGETING, FOV CIRCLE & PROTECTIONS
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "3. Aimbot Targeting, FOV Circle & Protections", 8)
+
 	-- Target Part, Manual FOV Input & Player Exclusion Row Card
-	local AimbotExtraCard = CreateCard(Tab7_Visuals, 48, 12)
+	local AimbotExtraCard = CreateCard(Tab7_Visuals, 48, 9)
 	local aimPartBtn = MakeButton(AimbotExtraCard, UDim2.new(0.34, -10, 0, 32), UDim2.new(0, 10, 0, 8), "", "Accent", 12)
+	local FovSliderObj local fovBox
 	fovBox = Instance.new("TextBox", AimbotExtraCard) fovBox.Size = UDim2.new(0.32, -8, 0, 32)
 	fovBox.Position = UDim2.new(0.34, 4, 0, 8)
 	fovBox.PlaceholderText = "FOV Radius (" .. tostring(FOV_RADIUS) .. ")"
@@ -5190,6 +5611,26 @@ local function SetupTab7()
 	RegisterThemeObject(excludeList, "ScrollBarImageColor3", "Accent")
 	Instance.new("UIListLayout", excludeList).Padding = UDim.new(0, 5)
 
+	FovSliderObj = CreateSlider(Tab7_Visuals, "Aimbot FOV Circle Radius (px)", 20, 800, FOV_RADIUS, 10, function(val)
+		FOV_RADIUS = val Config.AimbotFOVRadius = val if fovBox then fovBox.Text = tostring(val) end
+		SyncAimbotFovCircleVisibility() SaveConfig(false) end)
+	CreateToggle(Tab7_Visuals, "Show Aimbot FOV Circle (Turn OFF for Full-Screen Aimbot)", fovCircleEnabled, 11, function(state)
+		fovCircleEnabled = state Config.AimbotFOVCircleEnabled = state currentTarget = nil
+		SyncAimbotFovCircleVisibility() SaveConfig(false) end)
+	CreateToggle(Tab7_Visuals, "Aggressive Strong Lock Mode (Instant Snap + Velocity Lead)", strongLock, 12, function(state)
+		strongLock = state Config.StrongLock = state if not strongLock then currentTarget = nil end
+		SaveConfig(false) end)
+	CreateToggle(Tab7_Visuals, "Raycast Wallcheck (Stop Aim & Auto-Shoot Behind Walls)", wallcheckEnabled, 13, function(state)
+		wallcheckEnabled = state Config.WallcheckEnabled = state SaveConfig(false) end)
+	CreateToggle(Tab7_Visuals, "Only Aim at Enemies (Ignore Teammates in Normal Aimbot)", aimbotTeamCheck, 14, function(state)
+		aimbotTeamCheck = state Config.AimbotTeamCheck = state
+		if state and currentTarget and IsTeammate(currentTarget) then currentTarget = nil end SaveConfig(false)
+	end)
+	CreateToggle(Tab7_Visuals, "Enemy Katana Auto-Alert & Deflect Blocker (Notify + Stop Shoot)", Config.AntiKatanaEnabled ~= false, 15, function(state)
+		Config.AntiKatanaEnabled = state savedConfig.Settings.AntiKatanaEnabled = state
+		if not state then SetKatanaClickBlockState(false) if KatanaWarnBanner then KatanaWarnBanner.Visible = false end end
+		SaveConfig(false) end)
+
 	RefreshAimbotVisuals = function()
 		local theme = GetTheme()
 		local k = Config.AimbotKeybind or "Q"
@@ -5200,22 +5641,22 @@ local function SetupTab7()
 		else
 			aimbotToggleBtn.Text = "Toggle Aimbot [" .. k .. "]: " .. (aimbotEnabled and "ON" or "OFF")
 		end
-		aimbotToggleBtn.BackgroundColor3 = aimbotEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52)
+		FUI.TweenButtonState(aimbotToggleBtn, aimbotEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52), nil, aimbotEnabled)
 		aimbotBurstModeBtn.Text = (isBurst and "[ON] " or "") .. "1. Button [" .. k .. "] (" .. tostring(aimbotBurstDurationMs) .. "ms)"
-		aimbotBurstModeBtn.BackgroundColor3 = isBurst and theme.Accent or theme.PanelBg
+		FUI.TweenButtonState(aimbotBurstModeBtn, isBurst and theme.Accent or theme.PanelBg, nil, isBurst)
 		aimbotToggleModeBtn.Text = (not isBurst and "[ON] " or "") .. "2. Toggle [" .. k .. "] (Stay ON)"
-		aimbotToggleModeBtn.BackgroundColor3 = (not isBurst) and theme.Accent or theme.PanelBg
+		FUI.TweenButtonState(aimbotToggleModeBtn, (not isBurst) and theme.Accent or theme.PanelBg, nil, not isBurst)
 
 		local zk = Config.ZombieAimbotKeybind or "G"
 		zombieAimKeyAssignBtn.Text = "Bind Key: [" .. zk .. "]"
 		local zOn = (FUI.ZombieAim and FUI.ZombieAim.Enabled == true)
 		zombieAimToggleBtn.Text = "Zombie Aimbot [" .. zk .. "]: " .. (zOn and "ON" or "OFF")
-		zombieAimToggleBtn.BackgroundColor3 = zOn and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52)
+		FUI.TweenButtonState(zombieAimToggleBtn, zOn and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52), nil, zOn)
 		local isCrossPrio = (not FUI.ZombieAim or FUI.ZombieAim.Priority ~= "Distance")
 		zombieCrosshairPrioBtn.Text = (isCrossPrio and "[ON] " or "") .. "1. Crosshair / FOV Priority"
-		zombieCrosshairPrioBtn.BackgroundColor3 = isCrossPrio and theme.Accent or theme.PanelBg
+		FUI.TweenButtonState(zombieCrosshairPrioBtn, isCrossPrio and theme.Accent or theme.PanelBg, nil, isCrossPrio)
 		zombieDistancePrioBtn.Text = (not isCrossPrio and "[ON] " or "") .. "2. Closest Distance Priority"
-		zombieDistancePrioBtn.BackgroundColor3 = (not isCrossPrio) and theme.Accent or theme.PanelBg
+		FUI.TweenButtonState(zombieDistancePrioBtn, (not isCrossPrio) and theme.Accent or theme.PanelBg, nil, not isCrossPrio)
 		if not zOn and zombieAimStatusLbl then
 			zombieAimStatusLbl.Text = "Zombie Aim: Idle"
 		end
@@ -5223,7 +5664,7 @@ local function SetupTab7()
 		local tk = Config.TargetAimbotKeybind or "T"
 		targetAimKeyAssignBtn.Text = "Bind Key: [" .. tk .. "]"
 		targetAimbotToggleBtn.Text = "Target Aimbot [" .. tk .. "]: " .. (targetAimbotEnabled and "ON" or "OFF")
-		targetAimbotToggleBtn.BackgroundColor3 = targetAimbotEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52)
+		FUI.TweenButtonState(targetAimbotToggleBtn, targetAimbotEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52), nil, targetAimbotEnabled)
 		if specificTargetPlayer and specificTargetPlayer.Parent then
 			targetSelectBtn.Text = "Target: " .. tostring(specificTargetPlayer.DisplayName) .. " [List]"
 		else
@@ -5231,36 +5672,84 @@ local function SetupTab7()
 			targetSelectBtn.Text = "Target: None [Select]"
 		end
 
+		SyncAutoShootModeFlags()
 		local ask = Config.AutoShootKeybind or "Z"
 		autoShootKeyAssignBtn.Text = "Bind Key: [" .. ask .. "]"
-		autoShootToggleBtn.Text = "Normal Auto Shoot [" .. ask .. "]: " .. (autoShootEnabled and "ON" or "OFF")
-		autoShootToggleBtn.BackgroundColor3 = autoShootEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52)
-		if not autoShootEnabled then
-			if autoShootStatusLbl then autoShootStatusLbl.Text = "Normal Shoot: OFF" end
-		else
-			if autoShootStatusLbl then autoShootStatusLbl.Text = "Ready (Point at Player)" end
-		end
+		local isAimMode = (autoShootMode == "Aimbot")
+		local modeTag = isAimMode and "Aimbot" or "Normal"
+		autoShootToggleBtn.Text = "Auto Shoot [" .. ask .. "] (" .. modeTag .. "): " .. (autoShootMasterEnabled and "ON" or "OFF")
+		FUI.TweenButtonState(autoShootToggleBtn, autoShootMasterEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52), nil, autoShootMasterEnabled)
+		autoShootAimbotModeBtn.Text = (isAimMode and "[ON] " or "") .. "1. Aimbot Auto-Shoot"
+		FUI.TweenButtonState(autoShootAimbotModeBtn, isAimMode and theme.Accent or theme.PanelBg, nil, isAimMode)
+		autoShootNormalModeBtn.Text = (not isAimMode and "[ON] " or "") .. "2. Normal Auto-Shoot"
+		FUI.TweenButtonState(autoShootNormalModeBtn, (not isAimMode) and theme.Accent or theme.PanelBg, nil, not isAimMode)
 
-		local aask = Config.AimbotAutoShootKeybind or "V"
-		aimbotAutoShootKeyAssignBtn.Text = "Bind Key: [" .. aask .. "]"
-		aimbotAutoShootToggleBtn.Text = "Aimbot Auto Shoot [" .. aask .. "]: " .. (aimbotAutoShootEnabled and "ON" or "OFF")
-		aimbotAutoShootToggleBtn.BackgroundColor3 = aimbotAutoShootEnabled and Color3.fromRGB(46, 204, 113) or Color3.fromRGB(185, 52, 52)
-		if not aimbotAutoShootEnabled then
-			if aimbotAutoShootStatusLbl then aimbotAutoShootStatusLbl.Text = "Aimbot Shoot: OFF" end
-		elseif not (aimbotEnabled or targetAimbotEnabled or (FUI.ZombieAim and FUI.ZombieAim.Enabled)) then
-			if aimbotAutoShootStatusLbl then aimbotAutoShootStatusLbl.Text = "Standby (Need Aimbot [Q])" end
-		else
-			if aimbotAutoShootStatusLbl then aimbotAutoShootStatusLbl.Text = "Waiting Aimbot Lock..." end
-		end
-
-		if not (autoShootEnabled or aimbotAutoShootEnabled) then
+		if not autoShootMasterEnabled then
+			if autoShootStatusLbl then autoShootStatusLbl.Text = "Auto Shoot: OFF (" .. modeTag .. ")" end
 			StopAutoShootFiring()
+		elseif isAimMode then
+			if not (aimbotEnabled or targetAimbotEnabled or zOn) then
+				if autoShootStatusLbl then autoShootStatusLbl.Text = "Standby (Need Aimbot)" end
+			else
+				if autoShootStatusLbl then autoShootStatusLbl.Text = "Waiting Aimbot Lock..." end
+			end
+		else
+			if autoShootStatusLbl then autoShootStatusLbl.Text = "Ready (Point at Enemy)" end
 		end
 
 		aimPartBtn.Text = (aimPartName == "Head") and "Aim Part: Head" or "Aim Part: Body"
 		SyncAimbotFovCircleVisibility()
 	end
 	table.insert(ThemeObjects.CustomCallbacks, RefreshAimbotVisuals)
+
+	if FUI.RegisterSearchFunction then
+		FUI.RegisterSearchFunction({
+			Name = "1. Normal Aimbot [Q] (Camera Lock)",
+			TabName = "Aimbot & Visuals",
+			Keywords = "normal aimbot lock head body q camera aim",
+			Priority = 1,
+			GetState = function() return aimbotEnabled == true end,
+			Toggle = function() if toggleAimbot then toggleAimbot() end end
+		})
+		FUI.RegisterSearchFunction({
+			Name = "2. Target Specific Player Aimbot [T]",
+			TabName = "Aimbot & Visuals",
+			Keywords = "target specific player aimbot lock t aim",
+			Priority = 2,
+			GetState = function() return targetAimbotEnabled == true end,
+			Toggle = function() if toggleTargetAimbot then toggleTargetAimbot() end end
+		})
+		FUI.RegisterSearchFunction({
+			Name = "3. Zombie & Gargoyle Tower Aimbot [G] (Zero-Lag NPC Lock)",
+			TabName = "Aimbot & Visuals",
+			Keywords = "zombie gargoyle tower npc mob monster aimbot lock g horde",
+			Priority = 2,
+			GetState = function() return (FUI.ZombieAim and FUI.ZombieAim.Enabled == true) end,
+			Toggle = function() if FUI.ZombieAim and FUI.ZombieAim.ToggleFunc then FUI.ZombieAim.ToggleFunc() end end
+		})
+		FUI.RegisterSearchFunction({
+			Name = "Auto-Shoot Mode 1: Aimbot Lock Auto-Shoot [Z]",
+			TabName = "Aimbot & Visuals",
+			Keywords = "aimbot lock auto shoot triggerbot fire z shoot",
+			Priority = 3,
+			GetState = function() return aimbotAutoShootEnabled == true end,
+			Toggle = function() if toggleAimbotAutoShoot then toggleAimbotAutoShoot() end end
+		})
+		FUI.RegisterSearchFunction({
+			Name = "Auto-Shoot Mode 2: Normal Crosshair Auto-Shoot [Z]",
+			TabName = "Aimbot & Visuals",
+			Keywords = "normal auto shoot triggerbot rapid fire z shoot",
+			Priority = 4,
+			GetState = function() return autoShootEnabled == true end,
+			Toggle = function()
+				autoShootMode = "Normal"
+				autoShootMasterEnabled = not (autoShootMasterEnabled and autoShootMode == "Normal")
+				SyncAutoShootModeFlags()
+				RefreshAimbotVisuals()
+				SaveConfig(false)
+			end
+		})
+	end
 
 	local function rebuildTargetSelectList()
 		for _, ch in ipairs(targetScrollList:GetChildren()) do
@@ -5303,48 +5792,6 @@ local function SetupTab7()
 					end
 					currentTarget = nil
 					RefreshAimbotVisuals()
-	if FUI.RegisterSearchFunction then
-		FUI.RegisterSearchFunction({
-			Name = "1. Normal Aimbot [Q] (Camera Lock)",
-			TabName = "Aimbot & Visuals",
-			Keywords = "normal aimbot lock head body q camera aim",
-			Priority = 1,
-			GetState = function() return aimbotEnabled == true end,
-			Toggle = function() if toggleAimbot then toggleAimbot() end end
-		})
-		FUI.RegisterSearchFunction({
-			Name = "3. Zombie & Gargoyle Tower Aimbot [G] (Zero-Lag NPC Lock)",
-			TabName = "Aimbot & Visuals",
-			Keywords = "zombie gargoyle tower npc mob monster aimbot lock g horde",
-			Priority = 2,
-			GetState = function() return (FUI.ZombieAim and FUI.ZombieAim.Enabled == true) end,
-			Toggle = function() if FUI.ZombieAim and FUI.ZombieAim.ToggleFunc then FUI.ZombieAim.ToggleFunc() end end
-		})
-		FUI.RegisterSearchFunction({
-			Name = "2. Target Specific Player Aimbot [T]",
-			TabName = "Aimbot & Visuals",
-			Keywords = "target specific player aimbot lock t aim",
-			Priority = 2,
-			GetState = function() return targetAimbotEnabled == true end,
-			Toggle = function() if toggleTargetAimbot then toggleTargetAimbot() end end
-		})
-		FUI.RegisterSearchFunction({
-			Name = "Mode 1: Normal Auto Shoot / Triggerbot [Z]",
-			TabName = "Aimbot & Visuals",
-			Keywords = "normal auto shoot triggerbot rapid fire z shoot",
-			Priority = 3,
-			GetState = function() return autoShootEnabled == true end,
-			Toggle = function() if toggleAutoShoot then toggleAutoShoot() end end
-		})
-		FUI.RegisterSearchFunction({
-			Name = "Mode 2: Aimbot-Lock Auto Shoot [V]",
-			TabName = "Aimbot & Visuals",
-			Keywords = "aimbot lock auto shoot triggerbot fire v shoot",
-			Priority = 4,
-			GetState = function() return aimbotAutoShootEnabled == true end,
-			Toggle = function() if toggleAimbotAutoShoot then toggleAimbotAutoShoot() end end
-		})
-	end
 					rebuildTargetSelectList()
 				end)
 				totalH = totalH + 37
@@ -5359,7 +5806,9 @@ local function SetupTab7()
 
 	targetSelectBtn.MouseButton1Click:Connect(function()
 		targetListFrame.Visible = not targetListFrame.Visible
-		TargetAimbotCard.Size = targetListFrame.Visible and UDim2.new(1, 0, 0, 248) or UDim2.new(1, 0, 0, 94)
+		TweenService:Create(TargetAimbotCard, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Size = targetListFrame.Visible and UDim2.new(1, 0, 0, 248) or UDim2.new(1, 0, 0, 94)
+		}):Play()
 		if targetListFrame.Visible then rebuildTargetSelectList() end
 	end)
 
@@ -5486,18 +5935,13 @@ local function SetupTab7()
 		SaveConfig(false)
 	end
 
-	-- Mutual Exclusivity: Normal Auto Shoot [Z] vs Aimbot-Lock Auto Shoot [V]
+	-- Unified Auto-Shoot Toggle & Mode Selector (Mode 1: Aimbot Auto-Shoot vs Mode 2: Normal Auto-Shoot)
 	toggleAutoShoot = function()
-		autoShootEnabled = not autoShootEnabled
-		NotifyFeatureToggle("Normal Auto Shoot", autoShootEnabled)
-		Config.AutoShootEnabled = autoShootEnabled
-		savedConfig.Settings.AutoShootEnabled = autoShootEnabled
-		if autoShootEnabled and aimbotAutoShootEnabled then
-			aimbotAutoShootEnabled = false
-			Config.AimbotAutoShootEnabled = false
-			savedConfig.Settings.AimbotAutoShootEnabled = false
-		end
-		if not (autoShootEnabled or aimbotAutoShootEnabled) then
+		autoShootMasterEnabled = not autoShootMasterEnabled
+		SyncAutoShootModeFlags()
+		local modeLabel = (autoShootMode == "Aimbot") and "Auto-Shoot (Mode 1: Aimbot)" or "Auto-Shoot (Mode 2: Normal)"
+		NotifyFeatureToggle(modeLabel, autoShootMasterEnabled)
+		if not autoShootMasterEnabled then
 			StopAutoShootFiring()
 		end
 		RefreshAimbotVisuals()
@@ -5505,26 +5949,41 @@ local function SetupTab7()
 	end
 
 	toggleAimbotAutoShoot = function()
-		aimbotAutoShootEnabled = not aimbotAutoShootEnabled
-		NotifyFeatureToggle("Aimbot Auto Shoot", aimbotAutoShootEnabled)
-		Config.AimbotAutoShootEnabled = aimbotAutoShootEnabled
-		savedConfig.Settings.AimbotAutoShootEnabled = aimbotAutoShootEnabled
-		if aimbotAutoShootEnabled and autoShootEnabled then
-			autoShootEnabled = false
-			Config.AutoShootEnabled = false
-			savedConfig.Settings.AutoShootEnabled = false
+		if autoShootMode ~= "Aimbot" then
+			autoShootMode = "Aimbot"
+			autoShootMasterEnabled = true
+		else
+			autoShootMasterEnabled = not autoShootMasterEnabled
 		end
-		if not (autoShootEnabled or aimbotAutoShootEnabled) or not (aimbotEnabled or targetAimbotEnabled) then
+		SyncAutoShootModeFlags()
+		NotifyFeatureToggle("Auto-Shoot (Mode 1: Aimbot)", autoShootMasterEnabled)
+		if not autoShootMasterEnabled or not (aimbotEnabled or targetAimbotEnabled or (FUI.ZombieAim and FUI.ZombieAim.Enabled)) then
 			StopAutoShootFiring()
 		end
 		RefreshAimbotVisuals()
 		SaveConfig(false)
 	end
 
+	autoShootAimbotModeBtn.MouseButton1Click:Connect(function()
+		autoShootMode = "Aimbot"
+		SyncAutoShootModeFlags()
+		if not (aimbotEnabled or targetAimbotEnabled or (FUI.ZombieAim and FUI.ZombieAim.Enabled)) then
+			StopAutoShootFiring()
+		end
+		RefreshAimbotVisuals()
+		SaveConfig(false)
+	end)
+
+	autoShootNormalModeBtn.MouseButton1Click:Connect(function()
+		autoShootMode = "Normal"
+		SyncAutoShootModeFlags()
+		RefreshAimbotVisuals()
+		SaveConfig(false)
+	end)
+
 	aimbotToggleBtn.MouseButton1Click:Connect(toggleAimbot)
 	targetAimbotToggleBtn.MouseButton1Click:Connect(toggleTargetAimbot)
 	autoShootToggleBtn.MouseButton1Click:Connect(toggleAutoShoot)
-	aimbotAutoShootToggleBtn.MouseButton1Click:Connect(toggleAimbotAutoShoot)
 
 	aimPartBtn.MouseButton1Click:Connect(function()
 		aimPartName = (aimPartName == "Head") and "HumanoidRootPart" or "Head" Config.AimPartName = aimPartName
@@ -5548,12 +6007,6 @@ local function SetupTab7()
 	autoShootKeyDeleteBtn.MouseButton1Click:Connect(function() Config.AutoShootKeybind = "None"; savedConfig.Settings.AutoShootKeybind = "None"
 		ActiveKeybindCaptureCallback = nil RefreshAimbotVisuals() SaveConfig(false) end)
 
-	aimbotAutoShootKeyAssignBtn.MouseButton1Click:Connect(function()
-		aimbotAutoShootKeyAssignBtn.Text = "[Key / Del]" ActiveKeybindCaptureCallback = function(k)
-			TryAssignUniqueKeybind(k, "AimbotAutoShoot", function(val) Config.AimbotAutoShootKeybind = val; savedConfig.Settings.AimbotAutoShootKeybind = val end, RefreshAimbotVisuals, aimbotAutoShootKeyAssignBtn) end end)
-	aimbotAutoShootKeyDeleteBtn.MouseButton1Click:Connect(function() Config.AimbotAutoShootKeybind = "None"; savedConfig.Settings.AimbotAutoShootKeybind = "None"
-		ActiveKeybindCaptureCallback = nil RefreshAimbotVisuals() SaveConfig(false) end)
-
 	FUI.ZombieAim.ToggleFunc = function()
 		FUI.ZombieAim.Enabled = not FUI.ZombieAim.Enabled
 		Config.ZombieAimbotEnabled = FUI.ZombieAim.Enabled
@@ -5565,6 +6018,10 @@ local function SetupTab7()
 			if not (aimbotEnabled or targetAimbotEnabled) and aimbotAutoShootEnabled then
 				StopAutoShootFiring()
 			end
+		else
+			-- Purge any stale cached models on enable so fresh strict filters apply
+			table.clear(FUI.ZombieAim.CacheList)
+			table.clear(FUI.ZombieAim.CacheMap)
 		end
 		FUI.ZombieAim.SyncScannerHooks()
 		RefreshAimbotVisuals()
@@ -5611,11 +6068,16 @@ local function SetupTab7()
 			if FovSliderObj then FovSliderObj.SetValue(FOV_RADIUS) end SyncAimbotFovCircleVisibility()
 			SaveConfig(false) end fovBox.Text = tostring(FOV_RADIUS) end)
 	excludeBtn.MouseButton1Click:Connect(function() excludeFrame.Visible = not excludeFrame.Visible
-		AimbotExtraCard.Size = excludeFrame.Visible and UDim2.new(1, 0, 0, 186) or UDim2.new(1, 0, 0, 48)
+		TweenService:Create(AimbotExtraCard, TweenInfo.new(0.24, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+			Size = excludeFrame.Visible and UDim2.new(1, 0, 0, 186) or UDim2.new(1, 0, 0, 48)
+		}):Play()
 		if excludeFrame.Visible then rebuildExcludeList() end end) RefreshAimbotVisuals()
-	-- Section 2: Player ESP Highlights, 3D Boxes & Health/Shield Bars
-	CreateSectionHeader(Tab7_Visuals, "Player ESP (Chams, 3D Boxes & Health/Shield Bars)", 13)
-	CreateToggle(Tab7_Visuals, "Player Highlight & 3D Box ESP (Chams + Hitbox Boxes)", Config.ESPEnabled, 14, function(state)
+
+	--==============================================================================
+	-- SECTION 4: PLAYER ESP (CHAMS, 3D BOXES & HEALTH/SHIELD BARS)
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "4. Player ESP (Chams, 3D Boxes & Health/Shield Bars)", 16)
+	CreateToggle(Tab7_Visuals, "Player Highlight & 3D Box ESP (Chams + Hitbox Boxes)", Config.ESPEnabled, 17, function(state)
 		Config.ESPEnabled = state
 		if not state then
 			clearAllHighlights()
@@ -5626,7 +6088,7 @@ local function SetupTab7()
 		RefreshESPHighlights()
 		SaveConfig(false)
 	end)
-	CreateToggle(Tab7_Visuals, "Player Health & Shield Bars (Visible At Any Distance | Works Without ESP)", Config.ESPHealthBars ~= false, 15, function(state)
+	CreateToggle(Tab7_Visuals, "Player Health & Shield Bars (Visible At Any Distance | Works Without ESP)", Config.ESPHealthBars ~= false, 18, function(state)
 		Config.ESPHealthBars = state
 		if not state and not Config.ESPEnabled then
 			clearAllAdornments()
@@ -5635,14 +6097,17 @@ local function SetupTab7()
 		end
 		SaveConfig(false)
 	end)
-	CreateToggle(Tab7_Visuals, "Turn On ESP for Teammates (Show Teammate Highlights & Boxes)", espShowTeammates, 16, function(state)
+	CreateToggle(Tab7_Visuals, "Turn On ESP for Teammates (Show Teammate Highlights & Boxes)", espShowTeammates, 19, function(state)
 		espShowTeammates = state Config.ESPShowTeammates = state RefreshESPHighlights() updateAllAdornments()
 		SaveConfig(false) end)
-	-- Section 3: Camera Field of View & Perspective
-	CreateSectionHeader(Tab7_Visuals, "Camera Field of View & Perspective", 17)
-	CreateSlider(Tab7_Visuals, "Camera Field of View (FOV)", 30, 120, Config.FOV, 18, function(val)
+
+	--==============================================================================
+	-- SECTION 5: CAMERA FIELD OF VIEW & PERSPECTIVE
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "5. Camera Field of View & Perspective", 20)
+	CreateSlider(Tab7_Visuals, "Camera Field of View (FOV)", 30, 120, Config.FOV, 21, function(val)
 		Config.FOV = val pcall(function() workspace.CurrentCamera.FieldOfView = val end) SaveConfig(false) end)
-	local CamModeCard = CreateCard(Tab7_Visuals, 50, 19) local CamModeList = Instance.new("UIListLayout")
+	local CamModeCard = CreateCard(Tab7_Visuals, 50, 22) local CamModeList = Instance.new("UIListLayout")
 	CamModeList.FillDirection = Enum.FillDirection.Horizontal
 	CamModeList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	CamModeList.VerticalAlignment = Enum.VerticalAlignment.Center CamModeList.Padding = UDim.new(0, 8)
@@ -5655,14 +6120,17 @@ local function SetupTab7()
 	for _, modeName in ipairs({ "Free / Unlocked", "Force 1st Person", "Force 3rd Person" }) do
 		local MBtn = MakeButton(CamModeCard, UDim2.new(0, 165, 0, 32), nil, modeName, "AccentDark", 11)
 		MBtn.MouseButton1Click:Connect(function() ApplyCameraMode(modeName) end) end
-	-- Section 4: World Lighting, Fullbright & Time Presets
-	CreateSectionHeader(Tab7_Visuals, "Lighting, Fullbright & Time Presets", 20)
-	CreateToggle(Tab7_Visuals, "Fullbright Lighting Mode (No Shadows + Max Illumination)", Config.FullbrightEnabled, 21, function(state)
+
+	--==============================================================================
+	-- SECTION 6: WORLD LIGHTING, FULLBRIGHT & TIME PRESETS
+	--==============================================================================
+	CreateSectionHeader(Tab7_Visuals, "6. Lighting, Fullbright & Time Presets", 23)
+	CreateToggle(Tab7_Visuals, "Fullbright Lighting Mode (No Shadows + Max Illumination)", Config.FullbrightEnabled, 24, function(state)
 		Config.FullbrightEnabled = state if not state then pcall(function()
 				Lighting.Brightness = DefaultLighting.Brightness
 				Lighting.GlobalShadows = DefaultLighting.GlobalShadows
 				Lighting.OutdoorAmbient = DefaultLighting.OutdoorAmbient end) end SaveConfig(false) end)
-	local TimeCard = CreateCard(Tab7_Visuals, 50, 22) local TimeList = Instance.new("UIListLayout")
+	local TimeCard = CreateCard(Tab7_Visuals, 50, 25) local TimeList = Instance.new("UIListLayout")
 	TimeList.FillDirection = Enum.FillDirection.Horizontal
 	TimeList.HorizontalAlignment = Enum.HorizontalAlignment.Center
 	TimeList.VerticalAlignment = Enum.VerticalAlignment.Center TimeList.Padding = UDim.new(0, 10)
@@ -5773,7 +6241,7 @@ local TerminateBtn = Instance.new("TextButton") TerminateBtn.Size = UDim2.new(0,
 TerminateBtn.BackgroundColor3 = Color3.fromRGB(165, 38, 55) TerminateBtn.Font = Enum.Font.GothamBold
 TerminateBtn.TextSize = 12 TerminateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 TerminateBtn.Text = E.Stop .. " Terminate" TerminateBtn.Parent = ExecActionCard
-AddCorner(TerminateBtn, 6) local UpdatingCodeBox = false
+AddCorner(TerminateBtn, 6) FUI.AttachSpringAndRipple(TerminateBtn) local UpdatingCodeBox = false
 local function RebuildExecutorTabs() if #savedConfig.ExecutorTabs == 0 then
 		table.insert(savedConfig.ExecutorTabs, { Name = "Script 1", Code = "" }) end
 	savedConfig.ActiveExecutorTab = math.clamp(savedConfig.ActiveExecutorTab or 1, 1, #savedConfig.ExecutorTabs)
@@ -5950,6 +6418,7 @@ UnviewBtn.Text = "UNVIEW"
 UnviewBtn.Visible = false
 UnviewBtn.Parent = BottomControlsRow
 AddCorner(UnviewBtn, 6)
+FUI.AttachSpringAndRipple(UnviewBtn)
 
 local ScannerContainer = Instance.new("Frame")
 ScannerContainer.LayoutOrder = 3
@@ -5965,9 +6434,9 @@ listLayout.Parent = ScannerContainer
 local function RefreshDetectorControlVisuals()
 	local theme = GetTheme()
 	DetectorToggleBtn.Text = "Detector [F4]: " .. (detectorEnabled and "ON" or "OFF")
-	DetectorToggleBtn.BackgroundColor3 = detectorEnabled and theme.Accent or theme.PanelBg
+	FUI.TweenButtonState(DetectorToggleBtn, detectorEnabled and theme.Accent or theme.PanelBg, nil, detectorEnabled)
 	NotifToggleBtn.Text = notificationsEnabled and "ON" or "OFF"
-	NotifToggleBtn.BackgroundColor3 = notificationsEnabled and theme.Accent or theme.PanelBg
+	FUI.TweenButtonState(NotifToggleBtn, notificationsEnabled and theme.Accent or theme.PanelBg, nil, notificationsEnabled)
 	UnviewBtn.Visible = (SpectatingTarget ~= nil)
 end
 
@@ -6785,6 +7254,7 @@ local function createPlayerDetectorCard(plr)
 	whitelistBtn.ZIndex = 5
 	whitelistBtn.Parent = card
 	AddCorner(whitelistBtn, 6)
+	FUI.AttachSpringAndRipple(whitelistBtn)
 	local viewBtn = Instance.new("TextButton")
 	viewBtn.Size = UDim2.new(0, 52, 0, 24)
 	viewBtn.Position = UDim2.new(1, -142, 0, 11)
@@ -6797,6 +7267,7 @@ local function createPlayerDetectorCard(plr)
 	viewBtn.ZIndex = 5
 	viewBtn.Parent = card
 	AddCorner(viewBtn, 6)
+	FUI.AttachSpringAndRipple(viewBtn)
 	local tpBtn = Instance.new("TextButton")
 	tpBtn.Size = UDim2.new(0, 36, 0, 24)
 	tpBtn.Position = UDim2.new(1, -86, 0, 11)
@@ -6809,6 +7280,7 @@ local function createPlayerDetectorCard(plr)
 	tpBtn.ZIndex = 5
 	tpBtn.Parent = card
 	AddCorner(tpBtn, 6)
+	FUI.AttachSpringAndRipple(tpBtn)
 	local copyBtn = Instance.new("TextButton")
 	copyBtn.Size = UDim2.new(0, 42, 0, 24)
 	copyBtn.Position = UDim2.new(1, -46, 0, 11)
@@ -6821,6 +7293,7 @@ local function createPlayerDetectorCard(plr)
 	copyBtn.ZIndex = 5
 	copyBtn.Parent = card
 	AddCorner(copyBtn, 6)
+	FUI.AttachSpringAndRipple(copyBtn)
 	local divider = Instance.new("Frame")
 	divider.Size = UDim2.new(1, -20, 0, 1)
 	divider.Position = UDim2.new(0, 12, 0, 50)
@@ -7601,6 +8074,7 @@ vars.createButton = function(parent, name, text, baseColor, hoverColor)
 	button.Parent = parent
 	vars.addCorner(button, 6)
 	vars.addStroke(button, vars.COLORS.Border, 1, 0.35)
+	FUI.AttachSpringAndRipple(button)
 	return button
 end
 
@@ -10532,6 +11006,7 @@ vars.createAvatarCard = function(data, index)
 	AvatarName.TextXAlignment = Enum.TextXAlignment.Left
 	AvatarName.TextTruncate = Enum.TextTruncate.AtEnd
 	AvatarName.AutoButtonColor = false
+	FUI.AttachSpringAndRipple(AvatarName)
 	AvatarName.Parent = Row
 	vars.addPadding(AvatarName, 10, 10, 0, 0)
 	vars.addCorner(AvatarName, 6)
@@ -10560,6 +11035,7 @@ vars.createAvatarCard = function(data, index)
 	Rename.AutoButtonColor = false
 	Rename.Parent = Row
 	vars.addCorner(Rename, 6)
+	FUI.AttachSpringAndRipple(Rename)
 	vars.addStroke(Rename, t.Stroke, 1, 0.45)
 	local renameIcon = vars.createBuilderIcon(Rename, "Icon", vars.BUILDER_ICONS.Rename, 15, t.TextSecondary)
 	renameIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -10575,6 +11051,7 @@ vars.createAvatarCard = function(data, index)
 	Hover3D.AutoButtonColor = false
 	Hover3D.Parent = Row
 	vars.addCorner(Hover3D, 6)
+	FUI.AttachSpringAndRipple(Hover3D)
 	vars.addStroke(Hover3D, t.Stroke, 1, 0.45)
 	local previewIcon = vars.createBuilderIcon(Hover3D, "Icon", vars.BUILDER_ICONS.Preview3D, 15, t.TextSecondary)
 	previewIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -10590,6 +11067,7 @@ vars.createAvatarCard = function(data, index)
 	DeleteButton.AutoButtonColor = false
 	DeleteButton.Parent = Row
 	vars.addCorner(DeleteButton, 6)
+	FUI.AttachSpringAndRipple(DeleteButton)
 	vars.addStroke(DeleteButton, Color3.fromRGB(165, 55, 70), 1, 0.25)
 	local deleteIcon = vars.createBuilderIcon(DeleteButton, "Icon", vars.BUILDER_ICONS.Delete, 15, Color3.fromRGB(240, 110, 125))
 	deleteIcon.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -12716,13 +13194,13 @@ local function setAimbotStatusText(txt)
 	end
 end
 local function setNormalShootStatusText(txt)
-	if autoShootStatusLbl and autoShootStatusLbl.Text ~= txt then
+	if autoShootMode == "Normal" and autoShootStatusLbl and autoShootStatusLbl.Text ~= txt then
 		autoShootStatusLbl.Text = txt
 	end
 end
 local function setAimbotShootStatusText(txt)
-	if aimbotAutoShootStatusLbl and aimbotAutoShootStatusLbl.Text ~= txt then
-		aimbotAutoShootStatusLbl.Text = txt
+	if autoShootMode == "Aimbot" and autoShootStatusLbl and autoShootStatusLbl.Text ~= txt then
+		autoShootStatusLbl.Text = txt
 	end
 end
 local lastMqAim, lastMqTAim, lastMqShoot, lastMqFly = nil, nil, nil, nil
@@ -12833,7 +13311,7 @@ RunService:BindToRenderStep("Aimbot_v2", Enum.RenderPriority.Camera.Value + 10, 
 					local zEnt = FUI.ZombieAim.CacheMap[currentTarget]
 					local p = getTargetPart(currentTarget)
 					local _, onScr, sDist = worldToScreenDistance(p and p.Position or V3_ZERO)
-					if not zEnt or not FUI.ZombieAim.IsEntryAlive(zEnt) or not p or not onScr or (fovCircleEnabled and sDist > FOV_RADIUS) or not isTargetVisible(p, currentTarget) then
+					if not zEnt or not FUI.ZombieAim.IsEntryAlive(zEnt) or not p or not onScr or (fovCircleEnabled and sDist > FOV_RADIUS) or not isTargetVisible(p, currentTarget, true) then
 						currentTarget = nil
 					end
 				end
@@ -12870,7 +13348,8 @@ RunService:BindToRenderStep("Aimbot_v2", Enum.RenderPriority.Camera.Value + 10, 
 		local targetPart = getTargetPart(tChar)
 		local headPart = (tChar and tChar:FindFirstChild("Head")) or targetPart
 		local lockPart = (aimPartName == "Head" and headPart) or targetPart
-		if tChar and targetPart and isTargetVisible(targetPart, tChar) then
+		local isZombieTarget = (typeof(currentTarget) == "Instance" and currentTarget:IsA("Model"))
+		if tChar and targetPart and isTargetVisible(targetPart, tChar, isZombieTarget) then
 			local camPos = cam.CFrame.Position
 			local tVel = targetPart.AssemblyLinearVelocity or V3_ZERO
 			local leadPos = targetPart.Position + (tVel * 0.006)
@@ -12886,7 +13365,7 @@ RunService:BindToRenderStep("Aimbot_v2", Enum.RenderPriority.Camera.Value + 10, 
 			SetKatanaClickBlockState(false)
 			setAimbotStatusText("Locked: " .. GetTargetLabelName(currentTarget))
 
-			if (autoShootEnabled or aimbotAutoShootEnabled) and lockPart and isTargetVisible(lockPart, tChar) then
+			if (autoShootEnabled or aimbotAutoShootEnabled) and lockPart and isTargetVisible(lockPart, tChar, isZombieTarget) then
 				local hp = lockPart.Position
 				local cp = cam.CFrame.Position
 				if strongLock then
@@ -13014,7 +13493,7 @@ table.insert(Connections, RunService.Heartbeat:Connect(function(deltaTime)
 	-- 2. Performance HUD (Only updates text & ping when Dashboard tab is visible)
 	frameCount = frameCount + 1 local now = os.clock() if now - lastFpsTime >= 0.5 then
 		currentFps = math.floor(frameCount / (now - lastFpsTime) + 0.5) frameCount = 0 lastFpsTime = now
-		if isMenuVisible and ActiveTabName == "Dashboard & Themes" then
+		if isMenuVisible and (ActiveTabName == "Themes & Status" or ActiveTabName == "Dashboard & Themes") then
 			local pingMs = 0 local okPing, pingVal = pcall(player.GetNetworkPing, player)
 			if okPing and type(pingVal) == "number" then pingMs = math.floor(pingVal * 1000 + 0.5) end
 			local mlKey = Config.MouseLockKeybind or "None"
@@ -13073,7 +13552,7 @@ table.insert(Connections, RunService.Heartbeat:Connect(function(deltaTime)
 					root.CFrame = CFrame.new(nextPos) * (root.CFrame - root.CFrame.Position)
 					lastSafeAntiFlingCF = root.CFrame
 				end end
-			if targetJP > naturalJumpPower and UserInputService:IsKeyDown(Enum.KeyCode.Space) and hum.FloorMaterial ~= Enum.Material.Air then
+			if targetJP > naturalJumpPower and (UserInputService:IsKeyDown(Enum.KeyCode.Space) or hum.Jump) and hum.FloorMaterial ~= Enum.Material.Air then
 				local v = root.AssemblyLinearVelocity
 				root.AssemblyLinearVelocity = Vector3.new(v.X, targetJP, v.Z) end else
 			hum.WalkSpeed = targetWS
@@ -13113,8 +13592,6 @@ table.insert(Connections, UserInputService.InputBegan:Connect(function(input, gp
 		if zAimKey ~= "None" and keyName == zAimKey and FUI.ZombieAim and FUI.ZombieAim.ToggleFunc then FUI.ZombieAim.ToggleFunc() return end
 		local asKey = Config.AutoShootKeybind or "Z"
 		if asKey ~= "None" and keyName == asKey and toggleAutoShoot then toggleAutoShoot() return end
-		local aasKey = Config.AimbotAutoShootKeybind or "V"
-		if aasKey ~= "None" and keyName == aasKey and toggleAimbotAutoShoot then toggleAimbotAutoShoot() return end
 		if input.KeyCode == Enum.KeyCode.E and ActiveTabName == "Items & Prompts" then
 			if pullNearbyItems then pullNearbyItems() end return end
 		local fcKey = Config.FreecamKeybind or "C"
@@ -13129,7 +13606,7 @@ table.insert(Connections, UserInputService.InputBegan:Connect(function(input, gp
 						SafeTeleportToCoords(pos.X, pos.Y + 3, pos.Z) end end end end end end))
 -- Close, Re-Execution Cleanup & Full Shutdown Handler
 local function ShutdownInstance(immediate) if isClosingPermanently then return end
-	FlingActive, aimbotEnabled, targetAimbotEnabled, autoShootEnabled, aimbotAutoShootEnabled, currentTarget, masterFlightEnabled = false, false, false, false, false, nil, false
+	FlingActive, aimbotEnabled, targetAimbotEnabled, autoShootMasterEnabled, autoShootEnabled, aimbotAutoShootEnabled, currentTarget, masterFlightEnabled = false, false, false, false, false, false, nil, false
 	if StopAutoShootFiring then pcall(StopAutoShootFiring) end
 	pcall(function() game:GetService("ContextActionService"):UnbindAction("TR_KatanaClickBlock") end)
 	if SetStickTarget then pcall(SetStickTarget, nil) end
